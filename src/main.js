@@ -1,4 +1,12 @@
-import { CANVAS_SIZE, DEFAULT_TOKENS, DOCUMENT_VERSION, GRID } from './config.js';
+import {
+  CANVAS_SIZE,
+  DEFAULT_TOKENS,
+  DOCUMENT_VERSION,
+  GRID,
+  MOTIF_DENSITIES,
+  MOTIF_GLOWS,
+  MOTIF_KINDS,
+} from './config.js';
 import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from './edges.js';
 import {
   canvasPointToGrid,
@@ -8,6 +16,7 @@ import {
   normalizeGutter,
 } from './grid.js';
 import { createDuplicateItem } from './items.js';
+import { normalizeMotif } from './motifs.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
 import { createRandomComposition, createRandomPrimitive } from './random.js';
 import { reorderStack } from './stack.js';
@@ -111,6 +120,36 @@ function invertSelectedEdges() {
   updateSelected((item) => {
     item.edges = invertEdges(item.edges);
   }, 'Connectors inverted');
+}
+
+function setMotifKind(kind) {
+  if (!MOTIF_KINDS.includes(kind)) return;
+  updateSelected((item) => {
+    item.motif = { ...normalizeMotif(item.motif, item.id), kind };
+  }, kind === 'none' ? 'Inner motif hidden' : `Inner motif set to ${kind}`);
+}
+
+function setMotifDensity(density) {
+  if (!MOTIF_DENSITIES.includes(density)) return;
+  updateSelected((item) => {
+    item.motif = { ...normalizeMotif(item.motif, item.id), density };
+  }, `Motif density set to ${density}`);
+}
+
+function setMotifGlow(glow) {
+  if (!MOTIF_GLOWS.includes(glow)) return;
+  updateSelected((item) => {
+    item.motif = { ...normalizeMotif(item.motif, item.id), glow };
+  }, `Motif glow set to ${glow}`);
+}
+
+function rerollSelectedMotif() {
+  updateSelected((item) => {
+    item.motif = {
+      ...normalizeMotif(item.motif, item.id),
+      seed: Math.max(1, Math.floor(Math.random() * 2147483647)),
+    };
+  }, 'Inner motif rerolled');
 }
 
 function duplicateSelected() {
@@ -319,6 +358,20 @@ function bindInterface() {
   });
 
   root.querySelector('#invert-edges')?.addEventListener('click', invertSelectedEdges);
+
+  root.querySelector('#motif-kind')?.addEventListener('change', (event) => {
+    setMotifKind(event.target.value);
+  });
+
+  root.querySelectorAll('[data-motif-density]').forEach((button) => {
+    button.addEventListener('click', () => setMotifDensity(button.dataset.motifDensity));
+  });
+
+  root.querySelectorAll('[data-motif-glow]').forEach((button) => {
+    button.addEventListener('click', () => setMotifGlow(button.dataset.motifGlow));
+  });
+
+  root.querySelector('#reroll-motif')?.addEventListener('click', rerollSelectedMotif);
 
   root.querySelectorAll('[data-stack-action]').forEach((button) => {
     button.addEventListener('click', () => reorderSelected(button.dataset.stackAction));

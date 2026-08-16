@@ -1,5 +1,15 @@
-import { BORDER_WIDTHS, CANVAS_SIZE, EDGE_KEYS, GRID, SIZE_PRESETS } from './config.js';
+import {
+  BORDER_WIDTHS,
+  CANVAS_SIZE,
+  EDGE_KEYS,
+  GRID,
+  MOTIF_DENSITIES,
+  MOTIF_GLOWS,
+  MOTIF_KINDS,
+  SIZE_PRESETS,
+} from './config.js';
 import { getGridMetrics, getSizePreset, gridRect, normalizeGutter } from './grid.js';
+import { normalizeMotif, resolvedMotifKind } from './motifs.js';
 import { PRIMITIVES, renderGridExclusion, renderPrimitive } from './primitives.js';
 import { getStackPosition } from './stack.js';
 
@@ -142,6 +152,34 @@ function appearanceMarkup(selectedItem) {
   </div>`;
 }
 
+function motifControlsMarkup(selectedItem) {
+  const motif = normalizeMotif(selectedItem.motif, selectedItem.id);
+  const resolvedKind = resolvedMotifKind(motif);
+  const kindLabel = motif.kind === 'auto' ? `Auto · ${resolvedKind}` : 'Responsive to footprint';
+  return `<div class="section-heading"><p class="eyebrow">Inner motif</p><span>${kindLabel}</span></div>
+    <div class="motif-type-row">
+      <label class="wide-field">Content
+        <select class="input" id="motif-kind">
+          ${MOTIF_KINDS.map((kind) => `<option value="${kind}" ${motif.kind === kind ? 'selected' : ''}>${kind}</option>`).join('')}
+        </select>
+      </label>
+      <button class="action-button motif-reroll" id="reroll-motif" type="button" ${motif.kind === 'none' ? 'disabled' : ''}>${iconMarkup('shuffle')}<span>Reroll</span></button>
+    </div>
+    <div class="motif-setting">
+      <span>Density</span>
+      <div class="segmented thirds">
+        ${MOTIF_DENSITIES.map((density) => `<button class="${motif.density === density ? 'active' : ''}" data-motif-density="${density}" type="button" aria-pressed="${motif.density === density}" ${motif.kind === 'none' ? 'disabled' : ''}>${density}</button>`).join('')}
+      </div>
+    </div>
+    <div class="motif-setting">
+      <span>Glow</span>
+      <div class="segmented thirds">
+        ${MOTIF_GLOWS.map((glow) => `<button class="${motif.glow === glow ? 'active' : ''}" data-motif-glow="${glow}" type="button" aria-pressed="${motif.glow === glow}" ${motif.kind === 'none' ? 'disabled' : ''}>${glow}</button>`).join('')}
+      </div>
+    </div>
+    <p class="hint">Seeded content keeps its character while resizing and shifts around slots and tabs.</p>`;
+}
+
 function gutterControlsMarkup(gutter, showGrid) {
   const value = normalizeGutter(gutter);
   const progress = (value / GRID.maxGutter) * 100;
@@ -208,6 +246,10 @@ function shapeControlsMarkup(selectedItem, tokens, items) {
       <div class="section-heading"><p class="eyebrow">Edge connectors</p><span>Click an edge to cycle</span></div>
       ${edgeControlsMarkup(selectedItem)}
       <p class="hint">Slots subtract. Tabs add. Invert makes the complementary piece.</p>
+    </div>
+
+    <div class="control-group motif-group">
+      ${motifControlsMarkup(selectedItem)}
     </div>
 
     <div class="control-group">

@@ -36,6 +36,9 @@ export const DOCUMENT_VERSION = 2;
 export const EDGE_KEYS = Object.freeze(['top', 'right', 'bottom', 'left']);
 export const EDGE_STATES = Object.freeze(['flat', 'slot', 'tab']);
 export const BORDER_WIDTHS = Object.freeze([4, 8, 12]);
+export const MOTIF_KINDS = Object.freeze(['auto', 'none', 'fragments', 'scribble', 'dots', 'curve']);
+export const MOTIF_DENSITIES = Object.freeze(['sparse', 'balanced', 'rich']);
+export const MOTIF_GLOWS = Object.freeze(['off', 'soft', 'bright']);
 
 export const DEFAULT_EDGES = Object.freeze({
   top: 'flat',

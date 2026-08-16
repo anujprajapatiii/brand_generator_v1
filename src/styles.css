@@ -817,6 +817,38 @@ input:focus-visible {
   grid-template-columns: repeat(3, 34px);
 }
 
+.segmented.thirds {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.motif-type-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px;
+}
+
+.motif-reroll {
+  width: auto;
+  min-height: var(--control-height);
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.motif-setting {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--muted);
+}
+
+.motif-setting .segmented button {
+  min-width: 0;
+  padding-inline: 4px;
+}
+
 .wide-field {
   display: grid;
   gap: 7px;

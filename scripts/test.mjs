@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { DEFAULT_TOKENS, EDGE_KEYS, GRID, SIZE_PRESETS, STORAGE_KEYS } from '../src/config.js';
+import {
+  DEFAULT_TOKENS,
+  EDGE_KEYS,
+  GRID,
+  MOTIF_DENSITIES,
+  MOTIF_GLOWS,
+  MOTIF_KINDS,
+  SIZE_PRESETS,
+  STORAGE_KEYS,
+} from '../src/config.js';
 import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from '../src/edges.js';
 import {
   canvasPointToGrid,
@@ -14,6 +23,7 @@ import {
   itemsOverlap,
 } from '../src/grid.js';
 import { createDuplicateItem } from '../src/items.js';
+import { createRandomMotif, normalizeMotif, resolvedMotifKind } from '../src/motifs.js';
 import { PRIMITIVES, renderPrimitive } from '../src/primitives.js';
 import { createRandomComposition, createRandomPrimitive, randomEdges } from '../src/random.js';
 import { getStackPosition, reorderStack } from '../src/stack.js';
@@ -24,6 +34,9 @@ assert.deepEqual(Object.keys(PRIMITIVES), ['rectangle', 'ellipse']);
 assert.equal(PRIMITIVES.line, undefined);
 assert.deepEqual(Object.keys(SIZE_PRESETS), ['1x1', '1x2', '2x2', '2x3', '3x3']);
 assert.equal(GRID.cell, 80);
+assert.deepEqual(MOTIF_KINDS, ['auto', 'none', 'fragments', 'scribble', 'dots', 'curve']);
+assert.deepEqual(MOTIF_DENSITIES, ['sparse', 'balanced', 'rich']);
+assert.deepEqual(MOTIF_GLOWS, ['off', 'soft', 'bright']);
 
 for (const [type, definition] of Object.entries(PRIMITIVES)) {
   for (const size of Object.keys(SIZE_PRESETS)) {
@@ -44,8 +57,51 @@ for (const [type, definition] of Object.entries(PRIMITIVES)) {
     assert.match(markup, /data-edge-top="slot"/);
     assert.match(markup, /data-edge-right="tab"/);
     assert.match(markup, /<mask/);
+    assert.match(markup, /class="motif-layer"/);
+    assert.doesNotMatch(markup, /NaN|undefined/);
   }
 }
+
+for (const kind of MOTIF_KINDS.filter((candidate) => !['auto', 'none'].includes(candidate))) {
+  for (const size of Object.keys(SIZE_PRESETS)) {
+    const motifItem = {
+      id: `${kind}-${size}`,
+      type: 'rectangle',
+      column: 0,
+      row: 0,
+      size,
+      token: 'green',
+      edges: { top: 'slot', right: 'tab', bottom: 'slot', left: 'tab' },
+      appearance: 'solid',
+      borderWidth: 8,
+      motif: { kind, seed: 813, density: 'rich', glow: 'bright' },
+    };
+    const motifMarkup = renderPrimitive(motifItem, DEFAULT_TOKENS, { gutter: 24 });
+    assert.match(motifMarkup, new RegExp(`data-content-kind="${kind}"`));
+    assert.match(motifMarkup, /data-content-density="rich"/);
+    assert.match(motifMarkup, /data-content-glow="bright"/);
+    assert.match(motifMarkup, /mask="url\(#shape-mask-/);
+    assert.match(motifMarkup, /feGaussianBlur/);
+    assert.doesNotMatch(motifMarkup, /NaN|undefined/);
+  }
+}
+
+const stableMotifItem = {
+  id: 'stable-motif', type: 'ellipse', column: 0, row: 0, size: '1x1', token: 'yellow',
+  edges: applyEdgePreset('alternate'), appearance: 'solid', borderWidth: 8,
+  motif: { kind: 'auto', seed: 995, density: 'balanced', glow: 'off' },
+};
+const stableSmall = renderPrimitive(stableMotifItem, DEFAULT_TOKENS);
+const stableRepeat = renderPrimitive(stableMotifItem, DEFAULT_TOKENS);
+const stableLarge = renderPrimitive({ ...stableMotifItem, size: '3x3' }, DEFAULT_TOKENS);
+assert.equal(stableSmall, stableRepeat);
+assert.notEqual(stableSmall, stableLarge);
+assert.match(stableSmall, /data-content-mode="auto"/);
+assert.doesNotMatch(stableSmall, /feGaussianBlur/);
+assert.equal(resolvedMotifKind(normalizeMotif(stableMotifItem.motif)), resolvedMotifKind(stableMotifItem.motif));
+
+const hiddenMotif = renderPrimitive({ ...stableMotifItem, motif: { ...stableMotifItem.motif, kind: 'none' } }, DEFAULT_TOKENS);
+assert.doesNotMatch(hiddenMotif, /class="motif-layer"/);
 
 const outline = renderPrimitive({
   id: 'rectangle-outline',
@@ -112,6 +168,11 @@ assert.match(interfaceMarkup, /Delete remove/);
 assert.match(interfaceMarkup, /id="generate-composition"/);
 assert.match(interfaceMarkup, /id="clear-board"/);
 assert.match(interfaceMarkup, /Add composition/);
+assert.match(interfaceMarkup, /Inner motif/);
+assert.match(interfaceMarkup, /id="motif-kind"/);
+assert.match(interfaceMarkup, /id="reroll-motif"/);
+assert.match(interfaceMarkup, /data-motif-density="balanced"/);
+assert.match(interfaceMarkup, /data-motif-glow="soft"/);
 assert.doesNotMatch(interfaceMarkup, /data-grid-coordinate|data-select-item|Inspector|System structure|layers/i);
 assert.doesNotMatch(interfaceMarkup, /data-add-primitive="line"/);
 
@@ -136,6 +197,8 @@ assert.deepEqual(migratedWorkspace.document.items.map((item) => item.type), ['re
 assert.deepEqual(migratedWorkspace.document.items[0].edges, {
   top: 'slot', right: 'tab', bottom: 'flat', left: 'flat',
 });
+assert.equal(migratedWorkspace.document.items[0].motif.kind, 'auto');
+assert.ok(migratedWorkspace.document.items[0].motif.seed > 0);
 
 memoryStorage.set(STORAGE_KEYS.document, JSON.stringify({
   version: 2,
@@ -183,6 +246,7 @@ const duplicateSource = {
   id: 'rectangle-2', name: 'Rectangle 2', type: 'rectangle', column: 1, row: 1,
   size: '2x2', token: 'blue', edges: { top: 'slot', right: 'tab', bottom: 'flat', left: 'flat' },
   appearance: 'outline', borderWidth: 8,
+  motif: { kind: 'scribble', seed: 41, density: 'rich', glow: 'bright' },
 };
 const duplicate = createDuplicateItem(duplicateSource, 8, { column: 4, row: 5 }, 'Rectangle');
 assert.equal(duplicate.id, 'rectangle-8');
@@ -191,6 +255,8 @@ assert.equal(duplicate.column, 4);
 assert.equal(duplicate.row, 5);
 assert.deepEqual(duplicate.edges, duplicateSource.edges);
 assert.notEqual(duplicate.edges, duplicateSource.edges);
+assert.deepEqual(duplicate.motif, duplicateSource.motif);
+assert.notEqual(duplicate.motif, duplicateSource.motif);
 
 const randomValues = [0.99, 0.8, 0.4, 0.2];
 const deterministicRandom = () => randomValues.shift() ?? 0;
@@ -207,6 +273,13 @@ assert.deepEqual(randomPrimitive.edges, {
   top: 'flat', right: 'slot', bottom: 'tab', left: 'flat',
 });
 assert.notDeepEqual(randomPrimitive.edges, { top: 'flat', right: 'flat', bottom: 'flat', left: 'flat' });
+assert.equal(randomPrimitive.motif.kind, 'auto');
+assert.ok(randomPrimitive.motif.seed > 0);
+assert.ok(MOTIF_DENSITIES.includes(randomPrimitive.motif.density));
+assert.ok(MOTIF_GLOWS.includes(randomPrimitive.motif.glow));
+
+const generatedMotif = createRandomMotif(() => 0.5);
+assert.deepEqual(generatedMotif, { kind: 'auto', seed: 1073741823, density: 'balanced', glow: 'soft' });
 
 const randomPattern = randomEdges(() => 0.75);
 assert.deepEqual(Object.keys(randomPattern), EDGE_KEYS);

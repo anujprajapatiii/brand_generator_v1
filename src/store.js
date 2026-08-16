@@ -8,6 +8,7 @@ import {
 } from './config.js';
 import { normalizeEdges } from './edges.js';
 import { normalizeGridItem, normalizeGutter } from './grid.js';
+import { normalizeMotif } from './motifs.js';
 import { PRIMITIVES } from './primitives.js';
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -83,6 +84,7 @@ function sanitizeItem(item, index, migrateLegacy = false) {
     edges,
     appearance: item.appearance === 'outline' ? 'outline' : 'solid',
     borderWidth,
+    motif: normalizeMotif(item.motif, id),
   });
 }
 
@@ -113,7 +115,7 @@ export function loadWorkspace() {
   const legacy = current
     ? null
     : sanitizeDocument(safeParse(localStorage.getItem(STORAGE_KEYS.legacyDocument)), true);
-  const document = current ?? legacy ?? createInitialDocument();
+  const document = current ?? legacy ?? sanitizeDocument(createInitialDocument());
   return { document, tokens };
 }
 

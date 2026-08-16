@@ -1,6 +1,7 @@
 import { DEFAULT_TOKENS } from './config.js';
 import { normalizeEdges } from './edges.js';
 import { gridRect } from './grid.js';
+import { renderMotifLayer } from './motifs.js';
 
 function safeId(value) {
   return String(value).replace(/[^a-z0-9-_]/gi, '-');
@@ -139,9 +140,10 @@ export function renderPrimitive(item, tokens, { interactive = true, gutter = 0 }
   const rect = gridRect(item, gutter);
   const color = tokens[item.token] ?? DEFAULT_TOKENS.ink;
   const edges = normalizeEdges(item.edges);
+  const maskId = `shape-mask-${safeId(item.id)}`;
   const interactionAttributes = interactive
     ? ` data-id="${safeId(item.id)}" class="primitive primitive-${item.type}"`
     : '';
 
-  return `<g${interactionAttributes} transform="translate(${rect.x} ${rect.y})" data-motif-type="${item.type}" data-grid-column="${item.column}" data-grid-row="${item.row}" data-grid-size="${item.size}" data-grid-gutter="${gutter}" data-token="${item.token}" data-edge-top="${edges.top}" data-edge-right="${edges.right}" data-edge-bottom="${edges.bottom}" data-edge-left="${edges.left}" data-appearance="${item.appearance === 'outline' ? 'outline' : 'solid'}" data-border-width="${item.borderWidth ?? 8}">${silhouetteMarkup(item, rect.width, rect.height, color)}</g>`;
+  return `<g${interactionAttributes} transform="translate(${rect.x} ${rect.y})" data-motif-type="${item.type}" data-grid-column="${item.column}" data-grid-row="${item.row}" data-grid-size="${item.size}" data-grid-gutter="${gutter}" data-token="${item.token}" data-edge-top="${edges.top}" data-edge-right="${edges.right}" data-edge-bottom="${edges.bottom}" data-edge-left="${edges.left}" data-appearance="${item.appearance === 'outline' ? 'outline' : 'solid'}" data-border-width="${item.borderWidth ?? 8}">${silhouetteMarkup(item, rect.width, rect.height, color)}${renderMotifLayer(item, rect.width, rect.height, maskId)}</g>`;
 }

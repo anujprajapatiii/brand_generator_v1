@@ -1,5 +1,6 @@
 import { DEFAULT_TOKENS, GRID, SIZE_PRESETS } from './config.js';
 import { findAvailablePosition, itemsOverlap } from './grid.js';
+import { createRandomMotif } from './motifs.js';
 import { PRIMITIVES } from './primitives.js';
 
 const TOKEN_KEYS = Object.freeze(Object.keys(DEFAULT_TOKENS));
@@ -57,6 +58,7 @@ export function randomShapeTraits(random = Math.random, forcedSize = null) {
     edges: randomEdges(random),
     appearance: 'solid',
     borderWidth: 8,
+    motif: createRandomMotif(random),
   };
 }
 

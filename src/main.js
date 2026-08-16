@@ -1,4 +1,4 @@
-import { CANVAS_SIZE, DEFAULT_EDGES, DEFAULT_TOKENS, DOCUMENT_VERSION, GRID } from './config.js';
+import { CANVAS_SIZE, DEFAULT_TOKENS, DOCUMENT_VERSION, GRID } from './config.js';
 import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from './edges.js';
 import {
   canvasPointToGrid,
@@ -9,6 +9,7 @@ import {
 } from './grid.js';
 import { createDuplicateItem } from './items.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
+import { createRandomComposition, createRandomPrimitive } from './random.js';
 import { reorderStack } from './stack.js';
 import {
   loadTheme,
@@ -64,24 +65,20 @@ function addPrimitive(type) {
   if (!definition) return;
 
   const itemNumber = motifDocument.nextItemId;
-  const size = '1x1';
-  const position = findAvailablePosition(motifDocument.items, size, itemNumber * 3);
-  const item = {
-    id: `${type}-${itemNumber}`,
-    name: `${definition.label} ${itemNumber}`,
+  const item = createRandomPrimitive({
     type,
-    ...position,
-    size,
-    token: definition.defaultToken,
-    edges: { ...DEFAULT_EDGES },
-    appearance: 'solid',
-    borderWidth: 8,
-  };
+    itemNumber,
+    items: motifDocument.items,
+  });
+  if (!item) {
+    showToast('No open grid space for another shape');
+    return;
+  }
 
   motifDocument.nextItemId += 1;
   motifDocument.items.push(item);
   selectedId = item.id;
-  commitDocument(`${definition.label} added at 1 × 1`);
+  commitDocument(`${definition.label} added · ${item.size.replace('x', ' × ')}`);
 }
 
 function updateSelected(mutator, message) {
@@ -129,10 +126,27 @@ function duplicateSelected() {
   commitDocument(`${PRIMITIVES[item.type].label} duplicated`);
 }
 
+function isEditingTarget(target) {
+  return target instanceof HTMLElement && (
+    target.isContentEditable
+    || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
+  );
+}
+
 function handleKeyboardShortcut(event) {
-  if (!event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'd') return;
-  event.preventDefault();
-  if (!event.repeat) duplicateSelected();
+  if (isEditingTarget(event.target)) return;
+
+  if (event.metaKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    if (!event.repeat) duplicateSelected();
+    return;
+  }
+
+  if (!event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey
+    && ['Backspace', 'Delete'].includes(event.key)) {
+    event.preventDefault();
+    if (!event.repeat) deleteSelectedItem();
+  }
 }
 
 function reorderSelected(action) {
@@ -159,6 +173,30 @@ function remixLayout() {
     placed.push(item);
   });
   commitDocument('Layout remixed on the grid');
+}
+
+function addRandomComposition() {
+  const composition = createRandomComposition({
+    items: motifDocument.items,
+    nextItemId: motifDocument.nextItemId,
+  });
+  if (!composition.items.length) {
+    showToast('Board is full — clear space to add a composition');
+    return;
+  }
+
+  motifDocument.items.push(...composition.items);
+  motifDocument.nextItemId = composition.nextItemId;
+  selectedId = composition.items.at(-1).id;
+  commitDocument(`${composition.items.length} random shapes added`);
+}
+
+function clearBoard() {
+  if (!motifDocument.items.length) return;
+  if (!window.confirm('Clear every shape from this board?')) return;
+  motifDocument.items = [];
+  selectedId = null;
+  commitDocument('Board cleared');
 }
 
 function deleteSelectedItem() {
@@ -330,6 +368,8 @@ function bindInterface() {
   });
 
   root.querySelector('#remove')?.addEventListener('click', deleteSelectedItem);
+  root.querySelector('#generate-composition')?.addEventListener('click', addRandomComposition);
+  root.querySelector('#clear-board')?.addEventListener('click', clearBoard);
   root.querySelector('#remix')?.addEventListener('click', remixLayout);
   root.querySelector('#export')?.addEventListener('click', exportSvg);
   root.querySelector('#save-tokens')?.addEventListener('click', () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { DEFAULT_TOKENS, EDGE_KEYS, GRID, SIZE_PRESETS, STORAGE_KEYS } from '../src/config.js';
 import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from '../src/edges.js';
@@ -14,6 +15,7 @@ import {
 } from '../src/grid.js';
 import { createDuplicateItem } from '../src/items.js';
 import { PRIMITIVES, renderPrimitive } from '../src/primitives.js';
+import { createRandomComposition, createRandomPrimitive, randomEdges } from '../src/random.js';
 import { getStackPosition, reorderStack } from '../src/stack.js';
 import { loadWorkspace } from '../src/store.js';
 import { renderApp } from '../src/ui.js';
@@ -106,6 +108,10 @@ assert.match(interfaceMarkup, /y="-1.5"/);
 assert.match(interfaceMarkup, /12px gutter/);
 assert.match(interfaceMarkup, /data-stack-action="send-front"/);
 assert.match(interfaceMarkup, /⌘D duplicate/);
+assert.match(interfaceMarkup, /Delete remove/);
+assert.match(interfaceMarkup, /id="generate-composition"/);
+assert.match(interfaceMarkup, /id="clear-board"/);
+assert.match(interfaceMarkup, /Add composition/);
 assert.doesNotMatch(interfaceMarkup, /data-grid-coordinate|data-select-item|Inspector|System structure|layers/i);
 assert.doesNotMatch(interfaceMarkup, /data-add-primitive="line"/);
 
@@ -130,6 +136,19 @@ assert.deepEqual(migratedWorkspace.document.items.map((item) => item.type), ['re
 assert.deepEqual(migratedWorkspace.document.items[0].edges, {
   top: 'slot', right: 'tab', bottom: 'flat', left: 'flat',
 });
+
+memoryStorage.set(STORAGE_KEYS.document, JSON.stringify({
+  version: 2,
+  name: 'Cleared composition',
+  gutter: 10,
+  showGrid: false,
+  nextItemId: 12,
+  items: [],
+}));
+const clearedWorkspace = loadWorkspace();
+assert.equal(clearedWorkspace.document.name, 'Cleared composition');
+assert.equal(clearedWorkspace.document.items.length, 0);
+assert.equal(clearedWorkspace.document.nextItemId, 12);
 
 for (const size of Object.keys(SIZE_PRESETS)) {
   const preset = getSizePreset(size);
@@ -173,6 +192,38 @@ assert.equal(duplicate.row, 5);
 assert.deepEqual(duplicate.edges, duplicateSource.edges);
 assert.notEqual(duplicate.edges, duplicateSource.edges);
 
+const randomValues = [0.99, 0.8, 0.4, 0.2];
+const deterministicRandom = () => randomValues.shift() ?? 0;
+const randomPrimitive = createRandomPrimitive({
+  type: 'ellipse',
+  itemNumber: 9,
+  items: [],
+  random: deterministicRandom,
+});
+assert.equal(randomPrimitive.id, 'ellipse-9');
+assert.equal(randomPrimitive.size, '3x3');
+assert.equal(randomPrimitive.token, 'ink');
+assert.deepEqual(randomPrimitive.edges, {
+  top: 'flat', right: 'slot', bottom: 'tab', left: 'flat',
+});
+assert.notDeepEqual(randomPrimitive.edges, { top: 'flat', right: 'flat', bottom: 'flat', left: 'flat' });
+
+const randomPattern = randomEdges(() => 0.75);
+assert.deepEqual(Object.keys(randomPattern), EDGE_KEYS);
+assert.ok(Object.values(randomPattern).some((state) => state !== 'flat'));
+
+const generated = createRandomComposition({ items: [], nextItemId: 20, random: () => 0.1 });
+assert.equal(generated.items.length, 5);
+assert.equal(generated.nextItemId, 25);
+assert.deepEqual(generated.items.map((item) => item.id), [
+  'rectangle-20', 'rectangle-21', 'rectangle-22', 'rectangle-23', 'rectangle-24',
+]);
+for (let first = 0; first < generated.items.length; first += 1) {
+  for (let second = first + 1; second < generated.items.length; second += 1) {
+    assert.equal(itemsOverlap(generated.items[first], generated.items[second]), false);
+  }
+}
+
 const hiddenGridMarkup = renderApp({
   document: {
     version: 2, name: 'Hidden grid', gutter: 18, showGrid: false,
@@ -195,6 +246,18 @@ assert.equal(itemsOverlap(
   { column: 0, row: 0, size: '2x2' },
   { column: 1, row: 1, size: '2x2' },
 ), true);
+
+const [indexSource, stylesSource, mainSource] = await Promise.all([
+  readFile(new URL('../index.html', import.meta.url), 'utf8'),
+  readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+  readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
+]);
+assert.match(indexSource, /tasa-orbiter/);
+assert.doesNotMatch(indexSource, /Manrope|DM\+Mono|fonts\.googleapis/);
+assert.match(stylesSource, /--font: "TASA Orbiter", sans-serif/);
+assert.doesNotMatch(stylesSource, /font-mono|font-sans|Manrope|DM Mono/);
+assert.match(mainSource, /\['Backspace', 'Delete'\]/);
+assert.match(mainSource, /window\.confirm\('Clear every shape from this board\?'\)/);
 
 const occupied = [{ column: 0, row: 0, size: '2x2' }];
 const openPosition = findAvailablePosition(occupied, '1x1', 0);

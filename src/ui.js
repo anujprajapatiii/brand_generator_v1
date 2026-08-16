@@ -17,6 +17,25 @@ function tidyMetric(value) {
   return Number(value.toFixed(4));
 }
 
+const ICON_PATHS = Object.freeze({
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  sparkle: '<path d="m12 3 1.3 4.2L17.5 8.5l-4.2 1.3L12 14l-1.3-4.2-4.2-1.3 4.2-1.3L12 3Z"/><path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z"/>',
+  shuffle: '<path d="M4 7h3.5c3.5 0 5 10 9 10H20"/><path d="m17 14 3 3-3 3M4 17h3.5c1.2 0 2.1-1.1 3-2.7M14.5 9.7C15.2 8.1 16 7 17 7h3"/><path d="m17 4 3 3-3 3"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/>',
+  theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16V4Z"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
+  close: '<path d="m7 7 10 10M17 7 7 17"/>',
+  invert: '<path d="M5 8h12l-3-3M19 16H7l3 3"/>',
+  down: '<path d="M12 5v14M7 14l5 5 5-5"/>',
+  up: '<path d="M12 19V5M7 10l5-5 5 5"/>',
+  sendDown: '<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>',
+  sendUp: '<path d="M12 20V10M8 14l4-4 4 4M5 5h14"/>',
+});
+
+function iconMarkup(name) {
+  return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</svg>`;
+}
+
 function gridMarkup(gutter, items, visible) {
   if (!visible) return '';
   const metrics = getGridMetrics(gutter);
@@ -63,12 +82,23 @@ function canvasMarkup(document, tokens, selectedId) {
 
 function primitiveLibraryMarkup() {
   return Object.entries(PRIMITIVES).map(([type, definition]) => `
-    <button class="primitive-card" data-add-primitive="${type}" type="button">
+    <button class="primitive-card" data-add-primitive="${type}" type="button" aria-label="Add randomised ${definition.label.toLowerCase()}">
       <span class="primitive-icon ${definition.iconClass}" aria-hidden="true"></span>
       <span><strong>${definition.label}</strong><small>${definition.description}</small></span>
-      <span class="add-glyph" aria-hidden="true">+</span>
+      ${iconMarkup('plus')}
     </button>
   `).join('');
+}
+
+function boardActionsMarkup(itemCount) {
+  return `<section class="control-section board-section">
+    <div class="section-heading"><p class="eyebrow">Board</p><span>${itemCount} shape${itemCount === 1 ? '' : 's'}</span></div>
+    <button class="action-button featured" id="generate-composition" type="button">${iconMarkup('sparkle')}<span><strong>Add composition</strong><small>Random shapes, sizes and connectors</small></span></button>
+    <div class="board-actions">
+      <button class="action-button" id="remix" type="button" ${itemCount ? '' : 'disabled'}>${iconMarkup('shuffle')}<span>Remix layout</span></button>
+      <button class="action-button danger" id="clear-board" type="button" ${itemCount ? '' : 'disabled'}>${iconMarkup('trash')}<span>Clear board</span></button>
+    </div>
+  </section>`;
 }
 
 function sizePresetMarkup(selectedItem) {
@@ -91,7 +121,7 @@ function edgeControlsMarkup(selectedItem) {
   return `<div class="edge-map">
     ${edgeButton('top', selectedItem)}
     ${edgeButton('left', selectedItem)}
-    <button class="invert-control" id="invert-edges" type="button"><span aria-hidden="true">⇄</span><strong>Invert</strong></button>
+    <button class="invert-control" id="invert-edges" type="button">${iconMarkup('invert')}<strong>Invert</strong></button>
     ${edgeButton('right', selectedItem)}
     ${edgeButton('bottom', selectedItem)}
   </div>
@@ -132,14 +162,14 @@ function stackControlsMarkup(selectedItem, items) {
   const atBack = position.index <= 0;
   const atFront = position.index >= position.count - 1;
   const controls = [
-    { action: 'back', label: 'Move back', glyph: '↓', disabled: atBack },
-    { action: 'front', label: 'Move front', glyph: '↑', disabled: atFront },
-    { action: 'send-back', label: 'Send to back', glyph: '⇊', disabled: atBack },
-    { action: 'send-front', label: 'Send to front', glyph: '⇈', disabled: atFront },
+    { action: 'back', label: 'Move back', icon: 'down', disabled: atBack },
+    { action: 'front', label: 'Move front', icon: 'up', disabled: atFront },
+    { action: 'send-back', label: 'Send to back', icon: 'sendDown', disabled: atBack },
+    { action: 'send-front', label: 'Send to front', icon: 'sendUp', disabled: atFront },
   ];
 
   return `<div class="stack-actions">
-    ${controls.map((control) => `<button data-stack-action="${control.action}" type="button" ${control.disabled ? 'disabled' : ''}><span aria-hidden="true">${control.glyph}</span>${control.label}</button>`).join('')}
+    ${controls.map((control) => `<button data-stack-action="${control.action}" type="button" ${control.disabled ? 'disabled' : ''}>${iconMarkup(control.icon)}<span>${control.label}</span></button>`).join('')}
   </div>`;
 }
 
@@ -161,7 +191,7 @@ function shapeControlsMarkup(selectedItem, tokens, items) {
         <h2>${escapeHtml(selectedItem.name)}</h2>
         <span class="type-badge">${definition.label} · ${size.label}</span>
       </div>
-      <button class="remove" id="remove" type="button" aria-label="Delete ${escapeHtml(selectedItem.name)}">×</button>
+      <button class="icon-button remove" id="remove" type="button" aria-label="Delete ${escapeHtml(selectedItem.name)}">${iconMarkup('close')}</button>
     </div>
 
     <div class="control-group">
@@ -217,9 +247,8 @@ export function renderApp({ document, tokens, selectedId, theme }) {
       <div class="project"><span>/</span><strong>${escapeHtml(document.name)}</strong><span class="save-status"><i></i>Saved locally</span></div>
       <div class="top-actions">
         <span class="grid-status" id="grid-status-copy"><i aria-hidden="true"></i>${showGrid ? `${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap` : 'Grid hidden'}</span>
-        <button class="btn" id="remix" type="button">Remix layout</button>
-        <button class="theme-switch ${theme === 'dark' ? 'active' : ''}" id="theme" type="button" aria-label="Toggle dark mode"><span></span></button>
-        <button class="btn primary" id="export" type="button">Export SVG <span aria-hidden="true">↓</span></button>
+        <button class="btn ${theme === 'dark' ? 'active' : ''}" id="theme" type="button" aria-pressed="${theme === 'dark'}" aria-label="Toggle colour theme">${iconMarkup('theme')}<span>Theme</span></button>
+        <button class="btn primary" id="export" type="button">${iconMarkup('download')}<span>Export SVG</span></button>
       </div>
     </header>
 
@@ -230,6 +259,8 @@ export function renderApp({ document, tokens, selectedId, theme }) {
           <p>Start clean, then build a reusable edge language.</p>
         </div>
         <div class="primitive-list">${primitiveLibraryMarkup()}</div>
+
+        ${boardActionsMarkup(document.items.length)}
 
         ${gutterControlsMarkup(gutter, showGrid)}
 
@@ -250,7 +281,7 @@ export function renderApp({ document, tokens, selectedId, theme }) {
               ${canvasMarkup(document, tokens, selectedId)}
             </svg>
           </div>
-          <div class="canvas-footer"><span>Select or drag · ⌘D duplicate · edges cycle flat / slot / tab</span><span>Schema v${document.version}</span></div>
+          <div class="canvas-footer"><span>Drag to move · ⌘D duplicate · Delete remove</span><span>Schema v${document.version}</span></div>
         </div>
       </section>
     </div>

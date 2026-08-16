@@ -95,7 +95,6 @@ function sanitizeDocument(candidate, migrateLegacy = false) {
   const items = candidate.items
     .map((item, index) => sanitizeItem(item, index, migrateLegacy))
     .filter(Boolean);
-  if (!items.length) return null;
 
   return {
     version: DOCUMENT_VERSION,

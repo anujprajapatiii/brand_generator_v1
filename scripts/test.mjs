@@ -111,17 +111,38 @@ const fragmentRects = [...fragmentLayer.matchAll(/<rect x="([\d.]+)" y="([\d.]+)
   .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), radius: Number(match[5]) }));
 assert.equal(fragmentRects.length, 6);
 assert.ok(fragmentRects.every((rect) => rect.radius > 0));
+assert.ok(fragmentRects.every((rect) => rect.radius <= rect.height * 0.3));
+assert.ok(fragmentRects.every((rect) => rect.height <= 10));
 assert.ok(new Set(fragmentRects.map((rect) => rect.width)).size >= 2);
 assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.x)) + Math.max(...fragmentRects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), 80);
 assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.y)) + Math.max(...fragmentRects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), 80);
 
-const scribbleLayer = renderMotifLayer({
-  id: 'scribble-smooth', type: 'rectangle', edges: applyEdgePreset('flat'),
-  motif: { kind: 'scribble', seed: 41, density: 'rich', glow: 'off' },
-}, 240, 120, 'scribble-mask');
-assert.match(scribbleLayer, /<path d="M[^"]+ C/);
-assert.doesNotMatch(scribbleLayer, / L| A/);
-assert.match(scribbleLayer, /stroke-linecap="round" stroke-linejoin="round"/);
+const rectangularScribbles = ['sparse', 'balanced', 'rich'].map((density) => renderMotifLayer({
+  id: `scribble-${density}`, type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'scribble', seed: 41, density, glow: 'off' },
+}, 240, 120, `scribble-${density}-mask`));
+const rectangularCommandCounts = rectangularScribbles.map((markup) => (markup.match(/ C/g) ?? []).length);
+assert.deepEqual(rectangularCommandCounts, [4, 8, 16]);
+assert.ok(rectangularScribbles.every((markup) => /<path d="M[^"]+ C/.test(markup)));
+assert.ok(rectangularScribbles.every((markup) => !/ L| A/.test(markup)));
+assert.ok(rectangularScribbles.every((markup) => /stroke-linecap="round" stroke-linejoin="round"/.test(markup)));
+
+const scribbleStructures = [40, 41, 42, 43].map((seed) => renderMotifLayer({
+  id: `scribble-structure-${seed}`, type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'scribble', seed, density: 'balanced', glow: 'off' },
+}, 240, 120, `scribble-structure-${seed}-mask`).match(/data-scribble-structure="([^"]+)"/)[1]);
+assert.deepEqual(new Set(scribbleStructures), new Set(['sweep', 'wave', 'loop', 'weave']));
+
+const ellipseSpirals = ['sparse', 'balanced', 'rich'].map((density) => renderMotifLayer({
+  id: `spiral-${density}`, type: 'ellipse', edges: applyEdgePreset('flat'),
+  motif: { kind: 'scribble', seed: 41, density, glow: 'off' },
+}, 160, 160, `spiral-${density}-mask`));
+const spiralLaps = ellipseSpirals.map((markup) => Number(markup.match(/data-scribble-laps="(\d+)"/)[1]));
+assert.equal(spiralLaps[0], 1);
+assert.ok([2, 3].includes(spiralLaps[1]));
+assert.ok([3, 4].includes(spiralLaps[2]));
+assert.ok(ellipseSpirals.every((markup) => /data-scribble-structure="spiral"/.test(markup)));
+assert.ok(ellipseSpirals.every((markup) => !/ L| A/.test(markup)));
 
 const horizontalDots = renderMotifLayer({
   id: 'dots-horizontal', type: 'rectangle', edges: applyEdgePreset('flat'),
@@ -132,6 +153,17 @@ const horizontalCircles = [...horizontalDots.matchAll(/<circle cx="([\d.]+)" cy=
 assert.equal(horizontalCircles.length, 3);
 assert.deepEqual([...new Set(horizontalCircles.map((circle) => circle.y))], [80]);
 assert.equal(horizontalCircles.reduce((sum, circle) => sum + circle.x, 0) / horizontalCircles.length, 80);
+assert.ok((horizontalCircles[1].x - horizontalCircles[0].x) - (horizontalCircles[0].radius * 2) >= 10);
+
+const richHorizontalDots = renderMotifLayer({
+  id: 'dots-horizontal-rich', type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'dots', seed: 812, density: 'rich', glow: 'off' },
+}, 160, 160, 'dots-horizontal-rich-mask');
+const richHorizontalCircles = [...richHorizontalDots.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)]
+  .map((match) => ({ x: Number(match[1]), y: Number(match[2]), radius: Number(match[3]) }));
+assert.equal(richHorizontalCircles.length, 5);
+assert.ok(richHorizontalCircles[0].radius < horizontalCircles[0].radius);
+assert.ok((richHorizontalCircles[1].x - richHorizontalCircles[0].x) - (richHorizontalCircles[0].radius * 2) >= 10);
 
 const verticalDots = renderMotifLayer({
   id: 'dots-vertical', type: 'rectangle', edges: applyEdgePreset('flat'),

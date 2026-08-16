@@ -116,21 +116,24 @@ function fragmentLayerAt(width, height, density = 'rich') {
     unit: Number(markup.match(/data-fragment-unit="(\d+)"/)[1]),
     patternCount: Number(markup.match(/data-fragment-pattern-count="(\d+)"/)[1]),
     patterns: markup.match(/data-fragment-patterns="([^"]+)"/)[1].split(','),
+    spread: Number(markup.match(/data-fragment-spread="([\d.]+)"/)[1]),
   };
 }
 
 const fragmentDensityMatrix = [
-  { width: 80, height: 80, counts: [1, 1, 1] },
-  { width: 80, height: 160, counts: [1, 2, 2] },
-  { width: 160, height: 160, counts: [2, 2, 3] },
-  { width: 160, height: 240, counts: [2, 3, 4] },
-  { width: 240, height: 240, counts: [2, 4, 5] },
+  { width: 80, height: 80, counts: [1, 2, 3] },
+  { width: 80, height: 160, counts: [1, 3, 4] },
+  { width: 160, height: 160, counts: [2, 3, 5] },
+  { width: 160, height: 240, counts: [2, 4, 7] },
+  { width: 240, height: 240, counts: [3, 5, 9] },
 ];
 fragmentDensityMatrix.forEach(({ width, height, counts }) => {
+  const coverage = [];
   MOTIF_DENSITIES.forEach((density, densityIndex) => {
     const fragmentLayer = fragmentLayerAt(width, height, density);
     assert.equal(fragmentLayer.unit, 8);
     assert.equal(fragmentLayer.patternCount, counts[densityIndex]);
+    assert.equal(fragmentLayer.spread, [0.38, 0.66, 0.92][densityIndex]);
     assert.equal(fragmentLayer.patterns.length, fragmentLayer.patternCount);
     assert.ok(fragmentLayer.rects.length >= fragmentLayer.patternCount);
     assert.ok(fragmentLayer.rects.every((rect) => rect.width % fragmentLayer.unit === 0));
@@ -138,7 +141,12 @@ fragmentDensityMatrix.forEach(({ width, height, counts }) => {
     assert.ok(fragmentLayer.rects.every((rect) => rect.radius === 2.25));
     assert.equal(Number(((Math.min(...fragmentLayer.rects.map((rect) => rect.x)) + Math.max(...fragmentLayer.rects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), width / 2);
     assert.equal(Number(((Math.min(...fragmentLayer.rects.map((rect) => rect.y)) + Math.max(...fragmentLayer.rects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), height / 2);
+    const boundsWidth = Math.max(...fragmentLayer.rects.map((rect) => rect.x + rect.width)) - Math.min(...fragmentLayer.rects.map((rect) => rect.x));
+    const boundsHeight = Math.max(...fragmentLayer.rects.map((rect) => rect.y + rect.height)) - Math.min(...fragmentLayer.rects.map((rect) => rect.y));
+    coverage.push(boundsWidth * boundsHeight);
   });
+  assert.ok(coverage[1] > coverage[0]);
+  assert.ok(coverage[2] > coverage[1]);
 });
 
 const richLargeFragments = fragmentLayerAt(240, 240, 'rich');

@@ -86,46 +86,154 @@ function densityCount(density, values) {
   return values[MOTIF_DENSITIES.indexOf(density)];
 }
 
-function fragmentRowCount(frame, density) {
-  const baseRows = densityCount(density, [1, 2, 3]);
-  const heightTier = frame.outerHeight >= 140 ? 1 : 0;
-  const largeTier = frame.outerHeight >= 220 ? 1 : 0;
-  const portraitTier = frame.outerHeight > frame.outerWidth * 1.35 ? 1 : 0;
-  const expansion = heightTier + largeTier + portraitTier;
-  const densityResponse = densityCount(density, [0.5, 0.75, 1]);
-  return Math.min(6, baseRows + Math.round(expansion * densityResponse));
+const FRAGMENT_UNIT = 8;
+const FRAGMENT_RADIUS = 2.25;
+const FRAGMENT_FAMILIES = Object.freeze(['bar', 'split', 'step', 'corner', 'dot']);
+
+function randomInteger(minimum, maximum, random) {
+  if (maximum <= minimum) return minimum;
+  return minimum + Math.floor(random() * ((maximum - minimum) + 1));
+}
+
+function shuffled(values, random) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function fragmentPatternCapacity(frame) {
+  const widthCells = Math.max(1, Math.round(frame.outerWidth / 80));
+  const heightCells = Math.max(1, Math.round(frame.outerHeight / 80));
+  const footprintArea = widthCells * heightCells;
+  if (footprintArea <= 1) return 1;
+  if (footprintArea <= 2) return 2;
+  if (footprintArea <= 4) return 3;
+  if (footprintArea <= 6) return 4;
+  return 5;
+}
+
+function fragmentPatternCount(frame, density) {
+  const capacity = fragmentPatternCapacity(frame);
+  const densityScale = densityCount(density, [0.35, 0.65, 1]);
+  return Math.max(1, Math.ceil(capacity * densityScale));
+}
+
+function createFragmentPattern(family, maxColumns, random) {
+  if (family === 'dot') {
+    return { family, width: FRAGMENT_UNIT, height: FRAGMENT_UNIT, rects: [{ x: 0, y: 0, width: FRAGMENT_UNIT, height: FRAGMENT_UNIT }] };
+  }
+
+  if (family === 'bar') {
+    const columns = randomInteger(3, Math.min(10, maxColumns), random);
+    return { family, width: columns * FRAGMENT_UNIT, height: FRAGMENT_UNIT, rects: [{ x: 0, y: 0, width: columns * FRAGMENT_UNIT, height: FRAGMENT_UNIT }] };
+  }
+
+  if (family === 'split') {
+    const columns = randomInteger(4, Math.min(10, maxColumns), random);
+    const leftColumns = randomInteger(1, Math.min(3, columns - 2), random);
+    const rightColumns = Math.max(1, columns - leftColumns - 1);
+    return {
+      family,
+      width: columns * FRAGMENT_UNIT,
+      height: FRAGMENT_UNIT,
+      rects: [
+        { x: 0, y: 0, width: leftColumns * FRAGMENT_UNIT, height: FRAGMENT_UNIT },
+        { x: (leftColumns + 1) * FRAGMENT_UNIT, y: 0, width: rightColumns * FRAGMENT_UNIT, height: FRAGMENT_UNIT },
+      ],
+    };
+  }
+
+  if (family === 'step') {
+    const upperColumns = randomInteger(3, Math.min(5, maxColumns - 1), random);
+    const offsetColumns = randomInteger(1, Math.min(2, maxColumns - 3), random);
+    const lowerColumns = randomInteger(3, Math.min(5, maxColumns - offsetColumns), random);
+    const width = Math.max(upperColumns, offsetColumns + lowerColumns) * FRAGMENT_UNIT;
+    return {
+      family,
+      width,
+      height: FRAGMENT_UNIT * 2,
+      rects: [
+        { x: 0, y: 0, width: upperColumns * FRAGMENT_UNIT, height: FRAGMENT_UNIT },
+        { x: offsetColumns * FRAGMENT_UNIT, y: FRAGMENT_UNIT - 1, width: lowerColumns * FRAGMENT_UNIT, height: FRAGMENT_UNIT },
+      ],
+    };
+  }
+
+  const topColumns = randomInteger(4, Math.min(7, maxColumns), random);
+  const legColumns = Math.min(2, topColumns - 2);
+  const legRows = randomInteger(2, 3, random);
+  const width = topColumns * FRAGMENT_UNIT;
+  const mirrored = random() > 0.5;
+  const rects = [
+    { x: 0, y: 0, width, height: FRAGMENT_UNIT },
+    { x: (topColumns - legColumns) * FRAGMENT_UNIT, y: 0, width: legColumns * FRAGMENT_UNIT, height: legRows * FRAGMENT_UNIT },
+  ];
+  if (mirrored) {
+    rects.forEach((rect) => { rect.x = width - rect.x - rect.width; });
+  }
+  return { family, width, height: legRows * FRAGMENT_UNIT, rects };
+}
+
+function centerFragmentRects(rects, frame) {
+  const minX = Math.min(...rects.map((rect) => rect.x));
+  const maxX = Math.max(...rects.map((rect) => rect.x + rect.width));
+  const minY = Math.min(...rects.map((rect) => rect.y));
+  const maxY = Math.max(...rects.map((rect) => rect.y + rect.height));
+  const dx = frame.centerX - ((minX + maxX) / 2);
+  const dy = frame.centerY - ((minY + maxY) / 2);
+  return rects.map((rect) => ({ ...rect, x: rect.x + dx, y: rect.y + dy }));
 }
 
 function fragmentsGeometry(frame, motif, random) {
-  const rowCount = fragmentRowCount(frame, motif.density);
-  const portrait = frame.outerHeight > frame.outerWidth * 1.35;
-  const compositionWidth = frame.width * 0.88;
-  const band = clamp(frame.shortest * 0.078, 5, 10);
-  const gap = clamp(frame.shortest * (portrait ? 0.075 : 0.05), 4, 10);
-  const totalHeight = (rowCount * band) + ((rowCount - 1) * gap);
-  const startY = frame.centerY - (totalHeight / 2);
-  const widthScales = [0.2, 0.28, 0.38, 0.5];
-  const elements = [];
+  const patternCount = fragmentPatternCount(frame, motif.density);
+  const capacity = fragmentPatternCapacity(frame);
+  const portrait = frame.outerHeight > frame.outerWidth * 1.2;
+  const useColumns = !portrait && patternCount >= 4;
+  const availableColumns = useColumns
+    ? Math.floor((frame.width - (FRAGMENT_UNIT * 2)) / (FRAGMENT_UNIT * 2))
+    : Math.floor(frame.width / FRAGMENT_UNIT);
+  const maxColumns = Math.max(4, Math.min(12, availableColumns));
+  const allowedFamilies = FRAGMENT_FAMILIES.filter((family) => {
+    if (family === 'step') return capacity >= 2;
+    if (family === 'corner') return capacity >= 3;
+    return true;
+  });
+  const families = shuffled(allowedFamilies, random).slice(0, patternCount);
+  const patterns = families.map((family) => createFragmentPattern(family, maxColumns, random));
+  const patternGap = FRAGMENT_UNIT;
+  const placedRects = [];
 
-  for (let row = 0; row < rowCount; row += 1) {
-    const rawWidths = [0, 1].map(() => {
-      const scale = pick(widthScales, random);
-      return clamp(compositionWidth * scale, 10, compositionWidth * 0.5);
+  if (useColumns) {
+    const columns = [patterns.filter((_, index) => index % 2 === 0), patterns.filter((_, index) => index % 2 === 1)];
+    const columnWidths = columns.map((column) => Math.max(...column.map((pattern) => pattern.width)));
+    const columnHeights = columns.map((column) => column.reduce((sum, pattern) => sum + pattern.height, 0) + (Math.max(0, column.length - 1) * patternGap));
+    const totalHeight = Math.max(...columnHeights);
+    let columnX = 0;
+    columns.forEach((column, columnIndex) => {
+      let y = (totalHeight - columnHeights[columnIndex]) / 2;
+      column.forEach((pattern) => {
+        const x = columnX + ((columnWidths[columnIndex] - pattern.width) / 2);
+        pattern.rects.forEach((rect) => placedRects.push({ ...rect, x: rect.x + x, y: rect.y + y }));
+        y += pattern.height + patternGap;
+      });
+      columnX += columnWidths[columnIndex] + (FRAGMENT_UNIT * 2);
     });
-    const rawTotal = rawWidths[0] + rawWidths[1] + gap;
-    const fitScale = Math.min(1, compositionWidth / rawTotal);
-    const widths = rawWidths.map((width) => width * fitScale);
-    const rowWidth = widths[0] + widths[1] + gap;
-    let x = frame.centerX - (rowWidth / 2);
-    const y = startY + (row * (band + gap));
-
-    widths.forEach((elementWidth) => {
-      elements.push(`<rect x="${tidy(x)}" y="${tidy(y)}" width="${tidy(elementWidth)}" height="${tidy(band)}" rx="${tidy(band * 0.28)}" fill="#fff"/>`);
-      x += elementWidth + gap;
+  } else {
+    const totalHeight = patterns.reduce((sum, pattern) => sum + pattern.height, 0) + (Math.max(0, patterns.length - 1) * patternGap);
+    let y = 0;
+    patterns.forEach((pattern) => {
+      const horizontalDrift = (random() - 0.5) * Math.min(FRAGMENT_UNIT * 2, Math.max(0, frame.width - pattern.width));
+      pattern.rects.forEach((rect) => placedRects.push({ ...rect, x: rect.x + horizontalDrift, y: rect.y + y }));
+      y += pattern.height + patternGap;
     });
   }
 
-  return elements.join('');
+  const centeredRects = centerFragmentRects(placedRects, frame);
+  const elements = centeredRects.map((rect) => `<rect x="${tidy(rect.x)}" y="${tidy(rect.y)}" width="${tidy(rect.width)}" height="${tidy(rect.height)}" rx="${FRAGMENT_RADIUS}" fill="#fff"/>`).join('');
+  return `<g data-fragment-unit="${FRAGMENT_UNIT}" data-fragment-pattern-count="${patternCount}" data-fragment-patterns="${families.join(',')}">${elements}</g>`;
 }
 
 function centerPoints(points, frame) {

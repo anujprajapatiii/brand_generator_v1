@@ -1,6 +1,7 @@
 import { BORDER_WIDTHS, CANVAS_SIZE, EDGE_KEYS, GRID, SIZE_PRESETS } from './config.js';
-import { getSizePreset, gridRect } from './grid.js';
+import { getGridMetrics, getSizePreset, gridRect, normalizeGutter } from './grid.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
+import { getStackPosition } from './stack.js';
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (character) => ({
@@ -12,9 +13,24 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function selectionMarkup(item) {
+function tidyMetric(value) {
+  return Number(value.toFixed(4));
+}
+
+function gridMarkup(gutter) {
+  const metrics = getGridMetrics(gutter);
+  const cells = [];
+  for (let row = 0; row < GRID.rows; row += 1) {
+    for (let column = 0; column < GRID.columns; column += 1) {
+      cells.push(`<rect class="grid-cell" x="${tidyMetric(column * metrics.pitch)}" y="${tidyMetric(row * metrics.pitch)}" width="${tidyMetric(metrics.cell)}" height="${tidyMetric(metrics.cell)}"/>`);
+    }
+  }
+  return `<g class="grid-layer" aria-hidden="true">${cells.join('')}</g>`;
+}
+
+function selectionMarkup(item, gutter) {
   if (!item) return '';
-  const rect = gridRect(item);
+  const rect = gridRect(item, gutter);
   const handles = [
     [rect.x, rect.y],
     [rect.x + rect.width, rect.y],
@@ -26,6 +42,14 @@ function selectionMarkup(item) {
     <rect data-selection-outline x="${rect.x + 2}" y="${rect.y + 2}" width="${rect.width - 4}" height="${rect.height - 4}" rx="8"/>
     ${handles.map(([x, y], index) => `<rect data-selection-handle="${index}" x="${x - 5}" y="${y - 5}" width="10" height="10" rx="2"/>`).join('')}
   </g>`;
+}
+
+function canvasMarkup(document, tokens, selectedId) {
+  const gutter = normalizeGutter(document.gutter);
+  const selectedItem = document.items.find((item) => item.id === selectedId);
+  return `${gridMarkup(gutter)}
+    ${document.items.map((item) => renderPrimitive(item, tokens, { gutter })).join('')}
+    ${selectionMarkup(selectedItem, gutter)}`;
 }
 
 function primitiveLibraryMarkup() {
@@ -79,7 +103,34 @@ function appearanceMarkup(selectedItem) {
   </div>`;
 }
 
-function shapeControlsMarkup(selectedItem, tokens) {
+function gutterControlsMarkup(gutter) {
+  const value = normalizeGutter(gutter);
+  const progress = (value / GRID.maxGutter) * 100;
+  return `<section class="control-section gutter-section">
+    <div class="section-heading"><p class="eyebrow">Grid gutters</p><span>Canvas-wide</span></div>
+    <div class="gutter-readout"><span>Gap between cells</span><output id="grid-gutter-value" for="grid-gutter">${value}px</output></div>
+    <input class="gutter-slider" id="grid-gutter" type="range" min="${GRID.defaultGutter}" max="${GRID.maxGutter}" step="1" value="${value}" style="--range-progress:${progress}%" aria-label="Grid gutter in pixels">
+    <div class="range-scale"><span>${GRID.defaultGutter}px</span><span>${GRID.maxGutter}px</span></div>
+  </section>`;
+}
+
+function stackControlsMarkup(selectedItem, items) {
+  const position = getStackPosition(items, selectedItem.id);
+  const atBack = position.index <= 0;
+  const atFront = position.index >= position.count - 1;
+  const controls = [
+    { action: 'back', label: 'Move back', glyph: '↓', disabled: atBack },
+    { action: 'front', label: 'Move front', glyph: '↑', disabled: atFront },
+    { action: 'send-back', label: 'Send to back', glyph: '⇊', disabled: atBack },
+    { action: 'send-front', label: 'Send to front', glyph: '⇈', disabled: atFront },
+  ];
+
+  return `<div class="stack-actions">
+    ${controls.map((control) => `<button data-stack-action="${control.action}" type="button" ${control.disabled ? 'disabled' : ''}><span aria-hidden="true">${control.glyph}</span>${control.label}</button>`).join('')}
+  </div>`;
+}
+
+function shapeControlsMarkup(selectedItem, tokens, items) {
   if (!selectedItem) {
     return `<section class="control-section selected-empty">
       <span class="empty-symbol" aria-hidden="true">□</span>
@@ -103,6 +154,11 @@ function shapeControlsMarkup(selectedItem, tokens) {
     <div class="control-group">
       <div class="section-heading"><p class="eyebrow">Footprint</p><span>Grid units</span></div>
       <div class="size-presets">${sizePresetMarkup(selectedItem)}</div>
+    </div>
+
+    <div class="control-group">
+      <div class="section-heading"><p class="eyebrow">Stack order</p><span>${getStackPosition(items, selectedItem.id).index + 1} of ${items.length}</span></div>
+      ${stackControlsMarkup(selectedItem, items)}
     </div>
 
     <div class="control-group connector-group">
@@ -138,14 +194,15 @@ function tokensMarkup(tokens) {
 
 export function renderApp({ document, tokens, selectedId, theme }) {
   const selectedItem = document.items.find((item) => item.id === selectedId);
-  const gridCellPercent = 100 / GRID.columns;
+  const gutter = normalizeGutter(document.gutter);
+  const gridMetrics = getGridMetrics(gutter);
 
   return `<main class="app">
     <header class="topbar">
       <div class="brand"><span class="brandmark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Motif</div>
       <div class="project"><span>/</span><strong>${escapeHtml(document.name)}</strong><span class="save-status"><i></i>Saved locally</span></div>
       <div class="top-actions">
-        <span class="grid-status"><i aria-hidden="true"></i>${GRID.columns} × ${GRID.rows} grid</span>
+        <span class="grid-status" id="grid-status-copy"><i aria-hidden="true"></i>${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap</span>
         <button class="btn" id="remix" type="button">Remix layout</button>
         <button class="theme-switch ${theme === 'dark' ? 'active' : ''}" id="theme" type="button" aria-label="Toggle dark mode"><span></span></button>
         <button class="btn primary" id="export" type="button">Export SVG <span aria-hidden="true">↓</span></button>
@@ -160,7 +217,9 @@ export function renderApp({ document, tokens, selectedId, theme }) {
         </div>
         <div class="primitive-list">${primitiveLibraryMarkup()}</div>
 
-        ${shapeControlsMarkup(selectedItem, tokens)}
+        ${gutterControlsMarkup(gutter)}
+
+        ${shapeControlsMarkup(selectedItem, tokens, document.items)}
 
         <section class="control-section token-section">
           <div class="section-heading"><p class="eyebrow">Design tokens</p><span>Global</span></div>
@@ -171,11 +230,10 @@ export function renderApp({ document, tokens, selectedId, theme }) {
 
       <section class="stage">
         <div class="canvas-frame">
-          <div class="canvas-meta"><span>Composition plane</span><span>${GRID.cell}px unit · ${CANVAS_SIZE}px</span></div>
-          <div class="canvas-shell" style="--grid-cell:${gridCellPercent}%">
+          <div class="canvas-meta"><span>Composition plane</span><span id="grid-metrics">${tidyMetric(gridMetrics.cell)}px cell · ${gutter}px gutter · ${CANVAS_SIZE}px</span></div>
+          <div class="canvas-shell">
             <svg id="canvas" class="canvas" viewBox="0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grid-based brand composition">
-              ${document.items.map((item) => renderPrimitive(item, tokens)).join('')}
-              ${selectionMarkup(selectedItem)}
+              ${canvasMarkup(document, tokens, selectedId)}
             </svg>
           </div>
           <div class="canvas-footer"><span>Select or drag a shape · edges cycle flat / slot / tab</span><span>Schema v${document.version}</span></div>
@@ -186,8 +244,24 @@ export function renderApp({ document, tokens, selectedId, theme }) {
   <div class="toast" id="toast" role="status" aria-live="polite">Saved</div>`;
 }
 
-export function updateDraggedItem(root, item) {
-  const rect = gridRect(item);
+export function updateGutterPreview(root, { document, tokens, selectedId }) {
+  const gutter = normalizeGutter(document.gutter);
+  const metrics = getGridMetrics(gutter);
+  const canvas = root.querySelector('#canvas');
+  if (canvas) canvas.innerHTML = canvasMarkup(document, tokens, selectedId);
+
+  const value = root.querySelector('#grid-gutter-value');
+  if (value) value.textContent = `${gutter}px`;
+  const slider = root.querySelector('#grid-gutter');
+  slider?.style.setProperty('--range-progress', `${(gutter / GRID.maxGutter) * 100}%`);
+  const metricCopy = root.querySelector('#grid-metrics');
+  if (metricCopy) metricCopy.textContent = `${tidyMetric(metrics.cell)}px cell · ${gutter}px gutter · ${CANVAS_SIZE}px`;
+  const statusCopy = root.querySelector('#grid-status-copy');
+  if (statusCopy) statusCopy.innerHTML = `<i aria-hidden="true"></i>${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap`;
+}
+
+export function updateDraggedItem(root, item, gutter = GRID.defaultGutter) {
+  const rect = gridRect(item, gutter);
   const primitive = root.querySelector(`[data-id="${item.id}"]`);
   primitive?.setAttribute('transform', `translate(${rect.x} ${rect.y})`);
   primitive?.setAttribute('data-grid-column', item.column);

@@ -2,11 +2,12 @@ import {
   BORDER_WIDTHS,
   DEFAULT_TOKENS,
   DOCUMENT_VERSION,
+  GRID,
   SIZE_PRESETS,
   STORAGE_KEYS,
 } from './config.js';
 import { normalizeEdges } from './edges.js';
-import { normalizeGridItem } from './grid.js';
+import { normalizeGridItem, normalizeGutter } from './grid.js';
 import { PRIMITIVES } from './primitives.js';
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -21,6 +22,7 @@ function createInitialDocument() {
     version: DOCUMENT_VERSION,
     id: 'untitled-composition',
     name: 'Untitled composition',
+    gutter: GRID.defaultGutter,
     nextItemId: 4,
     items: [
       {
@@ -98,6 +100,7 @@ function sanitizeDocument(candidate, migrateLegacy = false) {
     version: DOCUMENT_VERSION,
     id: 'untitled-composition',
     name: String(candidate.name || 'Untitled composition').slice(0, 80),
+    gutter: normalizeGutter(candidate.gutter),
     nextItemId: Math.max(Number(candidate.nextItemId) || 1, items.length + 1),
     items,
   };

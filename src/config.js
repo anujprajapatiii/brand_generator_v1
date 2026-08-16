@@ -4,6 +4,8 @@ export const GRID = Object.freeze({
   columns: 9,
   rows: 9,
   cell: CANVAS_SIZE / 9,
+  defaultGutter: 0,
+  maxGutter: 32,
 });
 
 export const SIZE_PRESETS = Object.freeze({

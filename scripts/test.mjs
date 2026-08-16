@@ -5,12 +5,15 @@ import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from '../src/
 import {
   canvasPointToGrid,
   findAvailablePosition,
+  getGridMetrics,
   getSizePreset,
   gridRect,
+  normalizeGutter,
   normalizeGridItem,
   itemsOverlap,
 } from '../src/grid.js';
 import { PRIMITIVES, renderPrimitive } from '../src/primitives.js';
+import { getStackPosition, reorderStack } from '../src/stack.js';
 import { loadWorkspace } from '../src/store.js';
 import { renderApp } from '../src/ui.js';
 
@@ -62,7 +65,7 @@ const attachedTab = renderPrimitive({
   edges: { top: 'flat', right: 'tab', bottom: 'flat', left: 'flat' },
   appearance: 'solid', borderWidth: 8,
 }, DEFAULT_TOKENS);
-assert.match(attachedTab, /x="144" y="94" width="32" height="52" fill="#fff"/);
+assert.match(attachedTab, /x="152" y="94" width="16" height="52" fill="#fff"/);
 
 assert.equal(cycleEdge('flat'), 'slot');
 assert.equal(cycleEdge('slot'), 'tab');
@@ -79,6 +82,7 @@ const interfaceMarkup = renderApp({
   document: {
     version: 2,
     name: 'Test composition',
+    gutter: 12,
     items: [{
       id: 'rectangle-1', name: 'Rectangle 1', type: 'rectangle', column: 0, row: 0,
       size: '1x1', token: 'blue', edges: applyEdgePreset('alternate'),
@@ -93,6 +97,9 @@ assert.match(interfaceMarkup, /Shape controls/);
 assert.match(interfaceMarkup, /Edge connectors/);
 assert.match(interfaceMarkup, /id="invert-edges"/);
 assert.match(interfaceMarkup, /data-edge="top"/);
+assert.match(interfaceMarkup, /id="grid-gutter"/);
+assert.match(interfaceMarkup, /12px gutter/);
+assert.match(interfaceMarkup, /data-stack-action="send-front"/);
 assert.doesNotMatch(interfaceMarkup, /data-grid-coordinate|data-select-item|Inspector|System structure|layers/i);
 assert.doesNotMatch(interfaceMarkup, /data-add-primitive="line"/);
 
@@ -111,6 +118,7 @@ globalThis.localStorage = {
 };
 const migratedWorkspace = loadWorkspace();
 assert.equal(migratedWorkspace.document.version, 2);
+assert.equal(migratedWorkspace.document.gutter, 0);
 assert.deepEqual(migratedWorkspace.document.items.map((item) => item.type), ['rectangle']);
 assert.deepEqual(migratedWorkspace.document.items[0].edges, {
   top: 'slot', right: 'tab', bottom: 'flat', left: 'flat',
@@ -125,6 +133,25 @@ for (const size of Object.keys(SIZE_PRESETS)) {
   assert.equal(rect.width, preset.columns * GRID.cell);
   assert.equal(rect.height, preset.rows * GRID.cell);
 }
+
+assert.equal(normalizeGutter(999), GRID.maxGutter);
+assert.equal(normalizeGutter(-10), GRID.defaultGutter);
+const gutterMetrics = getGridMetrics(18);
+assert.deepEqual(gutterMetrics, { gutter: 18, cell: 64, pitch: 82 });
+assert.deepEqual(gridRect({ column: 2, row: 3, size: '2x2' }, 18), {
+  x: 164,
+  y: 246,
+  width: 146,
+  height: 146,
+});
+assert.deepEqual(canvasPointToGrid(176, 253, '2x2', { x: 12, y: 7 }, 18), { column: 2, row: 3 });
+
+const stack = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+assert.deepEqual(reorderStack(stack, 'b', 'front').map((item) => item.id), ['a', 'c', 'b', 'd']);
+assert.deepEqual(reorderStack(stack, 'c', 'back').map((item) => item.id), ['a', 'c', 'b', 'd']);
+assert.deepEqual(reorderStack(stack, 'd', 'send-back').map((item) => item.id), ['d', 'a', 'b', 'c']);
+assert.deepEqual(reorderStack(stack, 'a', 'send-front').map((item) => item.id), ['b', 'c', 'd', 'a']);
+assert.deepEqual(getStackPosition(stack, 'c'), { index: 2, count: 4 });
 
 assert.deepEqual(canvasPointToGrid(168, 247, '2x2', { x: 12, y: 7 }), { column: 2, row: 3 });
 assert.equal(itemsOverlap(

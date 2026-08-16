@@ -9,7 +9,7 @@ function safeId(value) {
 function connectorMetrics(width, height) {
   const shortestSide = Math.min(width, height);
   return {
-    depth: Math.max(10, Math.min(16, shortestSide * 0.18)),
+    depth: Math.max(5, Math.min(8, shortestSide * 0.09)),
     horizontalSpan: Math.max(22, Math.min(52, width * 0.34)),
     verticalSpan: Math.max(22, Math.min(52, height * 0.34)),
   };
@@ -106,16 +106,16 @@ export const PRIMITIVES = Object.freeze({
   }),
 });
 
-export function renderPrimitive(item, tokens, { interactive = true } = {}) {
+export function renderPrimitive(item, tokens, { interactive = true, gutter = 0 } = {}) {
   const definition = PRIMITIVES[item.type];
   if (!definition) return '';
 
-  const rect = gridRect(item);
+  const rect = gridRect(item, gutter);
   const color = tokens[item.token] ?? DEFAULT_TOKENS.ink;
   const edges = normalizeEdges(item.edges);
   const interactionAttributes = interactive
     ? ` data-id="${safeId(item.id)}" class="primitive primitive-${item.type}"`
     : '';
 
-  return `<g${interactionAttributes} transform="translate(${rect.x} ${rect.y})" data-motif-type="${item.type}" data-grid-column="${item.column}" data-grid-row="${item.row}" data-grid-size="${item.size}" data-token="${item.token}" data-edge-top="${edges.top}" data-edge-right="${edges.right}" data-edge-bottom="${edges.bottom}" data-edge-left="${edges.left}" data-appearance="${item.appearance === 'outline' ? 'outline' : 'solid'}" data-border-width="${item.borderWidth ?? 8}">${silhouetteMarkup(item, rect.width, rect.height, color)}</g>`;
+  return `<g${interactionAttributes} transform="translate(${rect.x} ${rect.y})" data-motif-type="${item.type}" data-grid-column="${item.column}" data-grid-row="${item.row}" data-grid-size="${item.size}" data-grid-gutter="${gutter}" data-token="${item.token}" data-edge-top="${edges.top}" data-edge-right="${edges.right}" data-edge-bottom="${edges.bottom}" data-edge-left="${edges.left}" data-appearance="${item.appearance === 'outline' ? 'outline' : 'solid'}" data-border-width="${item.borderWidth ?? 8}">${silhouetteMarkup(item, rect.width, rect.height, color)}</g>`;
 }

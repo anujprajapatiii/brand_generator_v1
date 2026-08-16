@@ -8,6 +8,20 @@ export function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+export function normalizeGutter(value) {
+  return clamp(Math.round(Number(value) || 0), GRID.defaultGutter, GRID.maxGutter);
+}
+
+export function getGridMetrics(gutter = GRID.defaultGutter) {
+  const normalizedGutter = normalizeGutter(gutter);
+  const cell = (GRID.cell * GRID.columns - (normalizedGutter * (GRID.columns - 1))) / GRID.columns;
+  return {
+    gutter: normalizedGutter,
+    cell,
+    pitch: cell + normalizedGutter,
+  };
+}
+
 export function clampGridPosition(column, row, sizeKey) {
   const size = getSizePreset(sizeKey);
   return {
@@ -25,21 +39,29 @@ export function normalizeGridItem(item) {
   };
 }
 
-export function gridRect(item) {
+export function gridRect(item, gutter = GRID.defaultGutter) {
   const normalized = normalizeGridItem(item);
   const size = getSizePreset(normalized.size);
+  const metrics = getGridMetrics(gutter);
   return {
-    x: normalized.column * GRID.cell,
-    y: normalized.row * GRID.cell,
-    width: size.columns * GRID.cell,
-    height: size.rows * GRID.cell,
+    x: normalized.column * metrics.pitch,
+    y: normalized.row * metrics.pitch,
+    width: (size.columns * metrics.cell) + ((size.columns - 1) * metrics.gutter),
+    height: (size.rows * metrics.cell) + ((size.rows - 1) * metrics.gutter),
   };
 }
 
-export function canvasPointToGrid(x, y, sizeKey, grabOffset = { x: 0, y: 0 }) {
+export function canvasPointToGrid(
+  x,
+  y,
+  sizeKey,
+  grabOffset = { x: 0, y: 0 },
+  gutter = GRID.defaultGutter,
+) {
+  const metrics = getGridMetrics(gutter);
   return clampGridPosition(
-    Math.round((x - grabOffset.x) / GRID.cell),
-    Math.round((y - grabOffset.y) / GRID.cell),
+    Math.round((x - grabOffset.x) / metrics.pitch),
+    Math.round((y - grabOffset.y) / metrics.pitch),
     sizeKey,
   );
 }

@@ -5,8 +5,10 @@ import {
   findAvailablePosition,
   gridRect,
   normalizeGridItem,
+  normalizeGutter,
 } from './grid.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
+import { reorderStack } from './stack.js';
 import {
   loadTheme,
   loadWorkspace,
@@ -14,7 +16,7 @@ import {
   saveTheme,
   saveTokens,
 } from './store.js';
-import { renderApp, updateDraggedItem } from './ui.js';
+import { renderApp, updateDraggedItem, updateGutterPreview } from './ui.js';
 
 const root = document.querySelector('#app');
 const workspace = loadWorkspace();
@@ -113,6 +115,22 @@ function invertSelectedEdges() {
   }, 'Connectors inverted');
 }
 
+function reorderSelected(action) {
+  const item = selectedItem();
+  if (!item) return;
+  const before = motifDocument.items.findIndex((candidate) => candidate.id === item.id);
+  motifDocument.items = reorderStack(motifDocument.items, item.id, action);
+  const after = motifDocument.items.findIndex((candidate) => candidate.id === item.id);
+  if (before === after) return;
+  const labels = {
+    back: 'Moved back one level',
+    front: 'Moved forward one level',
+    'send-back': 'Sent to back',
+    'send-front': 'Sent to front',
+  };
+  commitDocument(labels[action]);
+}
+
 function remixLayout() {
   const placed = [];
   motifDocument.items.forEach((item, index) => {
@@ -154,7 +172,7 @@ function startDrag(event) {
 
   const svg = root.querySelector('#canvas');
   const point = clientPointToCanvas(event, svg);
-  const rect = gridRect(item);
+  const rect = gridRect(item, motifDocument.gutter);
   dragState = {
     pointerId: event.pointerId,
     itemId: item.id,
@@ -170,11 +188,11 @@ function moveDrag(event) {
   if (!svg || !item) return;
 
   const point = clientPointToCanvas(event, svg);
-  const next = canvasPointToGrid(point.x, point.y, item.size, dragState.grabOffset);
+  const next = canvasPointToGrid(point.x, point.y, item.size, dragState.grabOffset, motifDocument.gutter);
   if (next.column === item.column && next.row === item.row) return;
 
   Object.assign(item, next);
-  updateDraggedItem(root, item);
+  updateDraggedItem(root, item, motifDocument.gutter);
 }
 
 function endDrag(event) {
@@ -203,7 +221,10 @@ function exportSvg() {
     document: motifDocument,
     tokens,
   }));
-  const primitives = motifDocument.items.map((item) => renderPrimitive(item, tokens, { interactive: false })).join('');
+  const primitives = motifDocument.items.map((item) => renderPrimitive(item, tokens, {
+    interactive: false,
+    gutter: motifDocument.gutter,
+  })).join('');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}"><metadata id="motif-document">${metadata}</metadata>${primitives}</svg>`;
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const anchor = document.createElement('a');
@@ -240,6 +261,22 @@ function bindInterface() {
   });
 
   root.querySelector('#invert-edges')?.addEventListener('click', invertSelectedEdges);
+
+  root.querySelectorAll('[data-stack-action]').forEach((button) => {
+    button.addEventListener('click', () => reorderSelected(button.dataset.stackAction));
+  });
+
+  const gutterSlider = root.querySelector('#grid-gutter');
+  gutterSlider?.addEventListener('input', () => {
+    motifDocument.gutter = normalizeGutter(gutterSlider.value);
+    persistDocument();
+    updateGutterPreview(root, {
+      document: motifDocument,
+      tokens,
+      selectedId,
+    });
+  });
+  gutterSlider?.addEventListener('change', () => showToast(`Grid gutter set to ${motifDocument.gutter}px`));
 
   root.querySelectorAll('[data-appearance]').forEach((button) => {
     button.addEventListener('click', () => updateSelected((item) => {

@@ -123,33 +123,35 @@ function centerPoints(points, frame) {
   return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
 }
 
+function smoothPath(points) {
+  const tension = 1.05;
+  let path = `M${tidy(points[0].x)} ${tidy(points[0].y)}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[Math.max(0, index - 1)];
+    const start = points[index];
+    const end = points[index + 1];
+    const next = points[Math.min(points.length - 1, index + 2)];
+    const controlOne = {
+      x: start.x + (((end.x - previous.x) * tension) / 6),
+      y: start.y + (((end.y - previous.y) * tension) / 6),
+    };
+    const controlTwo = {
+      x: end.x - (((next.x - start.x) * tension) / 6),
+      y: end.y - (((next.y - start.y) * tension) / 6),
+    };
+    path += ` C${tidy(controlOne.x)} ${tidy(controlOne.y)} ${tidy(controlTwo.x)} ${tidy(controlTwo.y)} ${tidy(end.x)} ${tidy(end.y)}`;
+  }
+  return path;
+}
+
 function scribbleGeometry(frame, motif, random) {
   const vertical = frame.height > frame.width * 1.18;
-  const baseSegments = [
-    { c1: [0.1, 0.62], c2: [0.22, 0.76], end: [0.28, 0.72] },
-    { c1: [0.36, 0.67], c2: [0.12, 0.28], end: [0.22, 0.14] },
-    { c1: [0.28, 0.02], c2: [0.57, 0.46], end: [0.7, 0.61] },
-    { c1: [0.77, 0.67], c2: [0.76, 0.55], end: [0.82, 0.5] },
-  ];
-  const tails = {
-    sparse: [
-      { c1: [0.87, 0.42], c2: [0.94, 0.58], end: [1, 0.69] },
-    ],
-    balanced: [
-      { c1: [0.86, 0.42], c2: [0.87, 0.61], end: [0.91, 0.55] },
-      { c1: [0.95, 0.49], c2: [0.97, 0.63], end: [1, 0.69] },
-    ],
-    rich: [
-      { c1: [0.85, 0.42], c2: [0.86, 0.58], end: [0.9, 0.55] },
-      { c1: [0.93, 0.51], c2: [0.94, 0.48], end: [0.96, 0.54] },
-      { c1: [0.98, 0.59], c2: [0.99, 0.65], end: [1, 0.69] },
-    ],
+  const anchors = {
+    sparse: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [1, 0.69]],
+    balanced: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [0.9, 0.56], [1, 0.69]],
+    rich: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [0.89, 0.56], [0.95, 0.52], [1, 0.69]],
   };
-  const sourcePoints = [[0, 0.58], ...[...baseSegments, ...tails[motif.density]].flatMap((segment) => [
-    segment.c1,
-    segment.c2,
-    segment.end,
-  ])];
+  const sourcePoints = anchors[motif.density];
   const flip = random() > 0.5;
   const normalized = sourcePoints.map(([x, y], index) => ({
     x: clamp(x + (index > 0 && index < sourcePoints.length - 1 ? (random() - 0.5) * 0.018 : 0), 0, 1),
@@ -164,16 +166,7 @@ function scribbleGeometry(frame, motif, random) {
   }));
   const points = centerPoints(mapped, frame);
   const strokeWidth = clamp(frame.shortest * 0.055, 4, 10);
-  let pointIndex = 0;
-  let path = `M${tidy(points[pointIndex].x)} ${tidy(points[pointIndex].y)}`;
-  pointIndex += 1;
-  while (pointIndex < points.length) {
-    const controlOne = points[pointIndex];
-    const controlTwo = points[pointIndex + 1];
-    const end = points[pointIndex + 2];
-    path += ` C${tidy(controlOne.x)} ${tidy(controlOne.y)} ${tidy(controlTwo.x)} ${tidy(controlTwo.y)} ${tidy(end.x)} ${tidy(end.y)}`;
-    pointIndex += 3;
-  }
+  const path = smoothPath(points);
   return `<path d="${path}" fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
 }
 

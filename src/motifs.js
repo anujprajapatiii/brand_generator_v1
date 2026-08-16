@@ -147,9 +147,9 @@ function smoothPath(points) {
 function scribbleGeometry(frame, motif, random) {
   const vertical = frame.height > frame.width * 1.18;
   const anchors = {
-    sparse: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [1, 0.69]],
-    balanced: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [0.9, 0.56], [1, 0.69]],
-    rich: [[0, 0.58], [0.28, 0.72], [0.22, 0.12], [0.7, 0.61], [0.82, 0.48], [0.89, 0.56], [0.95, 0.52], [1, 0.69]],
+    sparse: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [1, 0.69]],
+    balanced: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.9, 0.56], [1, 0.69]],
+    rich: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.89, 0.56], [0.95, 0.52], [1, 0.69]],
   };
   const sourcePoints = anchors[motif.density];
   const flip = random() > 0.5;
@@ -158,8 +158,8 @@ function scribbleGeometry(frame, motif, random) {
     y: clamp((flip ? 1 - y : y) + ((random() - 0.5) * 0.035), 0.05, 0.95),
   }));
   const gestureDepth = vertical
-    ? Math.min(frame.width, frame.height * 0.34)
-    : Math.min(frame.height, frame.width * 0.34);
+    ? Math.min(frame.width, frame.height * 0.4)
+    : Math.min(frame.height, frame.width * 0.4);
   const mapped = normalized.map((point) => (vertical ? {
     x: frame.centerX + ((0.5 - point.y) * gestureDepth),
     y: frame.y + (point.x * frame.height),

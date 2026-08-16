@@ -108,17 +108,29 @@ function fragmentPatternCapacity(frame) {
   const widthCells = Math.max(1, Math.round(frame.outerWidth / 80));
   const heightCells = Math.max(1, Math.round(frame.outerHeight / 80));
   const footprintArea = widthCells * heightCells;
-  if (footprintArea <= 1) return 1;
-  if (footprintArea <= 2) return 2;
-  if (footprintArea <= 4) return 3;
-  if (footprintArea <= 6) return 4;
-  return 5;
+  if (footprintArea <= 1) return 3;
+  if (footprintArea <= 2) return 4;
+  if (footprintArea <= 4) return 5;
+  if (footprintArea <= 6) return 7;
+  return 9;
 }
 
 function fragmentPatternCount(frame, density) {
   const capacity = fragmentPatternCapacity(frame);
-  const densityScale = densityCount(density, [0.35, 0.65, 1]);
+  const densityScale = densityCount(density, [0.25, 0.55, 1]);
   return Math.max(1, Math.ceil(capacity * densityScale));
+}
+
+function fragmentDensitySpread(density) {
+  return densityCount(density, [0.38, 0.66, 0.92]);
+}
+
+function fragmentFamilySequence(allowedFamilies, patternCount, random) {
+  const families = [];
+  while (families.length < patternCount) {
+    families.push(...shuffled(allowedFamilies, random));
+  }
+  return families.slice(0, patternCount);
 }
 
 function createFragmentPattern(family, maxColumns, random) {
@@ -190,50 +202,56 @@ function centerFragmentRects(rects, frame) {
 function fragmentsGeometry(frame, motif, random) {
   const patternCount = fragmentPatternCount(frame, motif.density);
   const capacity = fragmentPatternCapacity(frame);
+  const spread = fragmentDensitySpread(motif.density);
   const portrait = frame.outerHeight > frame.outerWidth * 1.2;
-  const useColumns = !portrait && patternCount >= 4;
-  const availableColumns = useColumns
-    ? Math.floor((frame.width - (FRAGMENT_UNIT * 2)) / (FRAGMENT_UNIT * 2))
-    : Math.floor(frame.width / FRAGMENT_UNIT);
+  const columnCount = portrait ? 1 : patternCount >= 7 && frame.outerWidth >= 240 ? 3 : patternCount >= 4 ? 2 : 1;
+  const targetWidth = Math.max(FRAGMENT_UNIT * 4, frame.width * spread);
+  const targetHeight = Math.max(FRAGMENT_UNIT, frame.height * spread);
+  const availableColumns = Math.floor((targetWidth - ((columnCount - 1) * FRAGMENT_UNIT * 2)) / (columnCount * FRAGMENT_UNIT));
   const maxColumns = Math.max(4, Math.min(12, availableColumns));
   const allowedFamilies = FRAGMENT_FAMILIES.filter((family) => {
     if (family === 'step') return capacity >= 2;
     if (family === 'corner') return capacity >= 3;
     return true;
   });
-  const families = shuffled(allowedFamilies, random).slice(0, patternCount);
+  const families = fragmentFamilySequence(allowedFamilies, patternCount, random);
   const patterns = families.map((family) => createFragmentPattern(family, maxColumns, random));
-  const patternGap = FRAGMENT_UNIT;
   const placedRects = [];
+  const columns = Array.from({ length: columnCount }, (_, columnIndex) => patterns.filter((_, index) => index % columnCount === columnIndex));
+  const columnWidths = columns.map((column) => Math.max(...column.map((pattern) => pattern.width)));
+  const columnPatternHeights = columns.map((column) => column.reduce((sum, pattern) => sum + pattern.height, 0));
+  const layoutHeight = Math.max(targetHeight, ...columnPatternHeights);
+  const minimumColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  const columnGap = columnCount > 1
+    ? Math.max(FRAGMENT_UNIT * 2, (targetWidth - minimumColumnWidth) / (columnCount - 1))
+    : 0;
+  const layoutWidth = Math.max(targetWidth, minimumColumnWidth + ((columnCount - 1) * columnGap));
+  let columnX = 0;
 
-  if (useColumns) {
-    const columns = [patterns.filter((_, index) => index % 2 === 0), patterns.filter((_, index) => index % 2 === 1)];
-    const columnWidths = columns.map((column) => Math.max(...column.map((pattern) => pattern.width)));
-    const columnHeights = columns.map((column) => column.reduce((sum, pattern) => sum + pattern.height, 0) + (Math.max(0, column.length - 1) * patternGap));
-    const totalHeight = Math.max(...columnHeights);
-    let columnX = 0;
-    columns.forEach((column, columnIndex) => {
-      let y = (totalHeight - columnHeights[columnIndex]) / 2;
-      column.forEach((pattern) => {
-        const x = columnX + ((columnWidths[columnIndex] - pattern.width) / 2);
-        pattern.rects.forEach((rect) => placedRects.push({ ...rect, x: rect.x + x, y: rect.y + y }));
-        y += pattern.height + patternGap;
-      });
-      columnX += columnWidths[columnIndex] + (FRAGMENT_UNIT * 2);
+  columns.forEach((column, columnIndex) => {
+    const columnHeight = columnPatternHeights[columnIndex];
+    const rowGap = column.length > 1 ? Math.max(0, (layoutHeight - columnHeight) / (column.length - 1)) : 0;
+    let y = column.length === 1 ? (layoutHeight - column[0].height) / 2 : 0;
+    const reverseHorizontalFlow = random() > 0.5;
+
+    column.forEach((pattern, patternIndex) => {
+      let x;
+      if (columnCount === 1 && column.length > 1) {
+        const progress = patternIndex / (column.length - 1);
+        const resolvedProgress = reverseHorizontalFlow ? 1 - progress : progress;
+        x = resolvedProgress * Math.max(0, layoutWidth - pattern.width);
+      } else {
+        x = columnX + ((columnWidths[columnIndex] - pattern.width) / 2);
+      }
+      pattern.rects.forEach((rect) => placedRects.push({ ...rect, x: rect.x + x, y: rect.y + y }));
+      y += pattern.height + rowGap;
     });
-  } else {
-    const totalHeight = patterns.reduce((sum, pattern) => sum + pattern.height, 0) + (Math.max(0, patterns.length - 1) * patternGap);
-    let y = 0;
-    patterns.forEach((pattern) => {
-      const horizontalDrift = (random() - 0.5) * Math.min(FRAGMENT_UNIT * 2, Math.max(0, frame.width - pattern.width));
-      pattern.rects.forEach((rect) => placedRects.push({ ...rect, x: rect.x + horizontalDrift, y: rect.y + y }));
-      y += pattern.height + patternGap;
-    });
-  }
+    columnX += columnWidths[columnIndex] + columnGap;
+  });
 
   const centeredRects = centerFragmentRects(placedRects, frame);
   const elements = centeredRects.map((rect) => `<rect x="${tidy(rect.x)}" y="${tidy(rect.y)}" width="${tidy(rect.width)}" height="${tidy(rect.height)}" rx="${FRAGMENT_RADIUS}" fill="#fff"/>`).join('');
-  return `<g data-fragment-unit="${FRAGMENT_UNIT}" data-fragment-pattern-count="${patternCount}" data-fragment-patterns="${families.join(',')}">${elements}</g>`;
+  return `<g data-fragment-unit="${FRAGMENT_UNIT}" data-fragment-pattern-count="${patternCount}" data-fragment-patterns="${families.join(',')}" data-fragment-spread="${spread}">${elements}</g>`;
 }
 
 function centerPoints(points, frame) {

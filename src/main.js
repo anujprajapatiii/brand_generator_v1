@@ -59,6 +59,7 @@ function commitDocument(message) {
 }
 
 function render() {
+  const sidebarScrollTop = root.querySelector('.sidebar')?.scrollTop ?? 0;
   applyThemeAndTokens();
   root.innerHTML = renderApp({
     document: motifDocument,
@@ -67,6 +68,8 @@ function render() {
     theme,
   });
   bindInterface();
+  const sidebar = root.querySelector('.sidebar');
+  if (sidebar) sidebar.scrollTop = sidebarScrollTop;
 }
 
 function addPrimitive(type) {

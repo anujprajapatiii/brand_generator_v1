@@ -331,6 +331,8 @@ assert.match(stylesSource, /--font: "TASA Orbiter", sans-serif/);
 assert.doesNotMatch(stylesSource, /font-mono|font-sans|Manrope|DM Mono/);
 assert.match(mainSource, /\['Backspace', 'Delete'\]/);
 assert.match(mainSource, /window\.confirm\('Clear every shape from this board\?'\)/);
+assert.match(mainSource, /sidebarScrollTop = root\.querySelector\('\.sidebar'\)\?\.scrollTop \?\? 0/);
+assert.match(mainSource, /sidebar\.scrollTop = sidebarScrollTop/);
 
 const occupied = [{ column: 0, row: 0, size: '2x2' }];
 const openPosition = findAvailablePosition(occupied, '1x1', 0);

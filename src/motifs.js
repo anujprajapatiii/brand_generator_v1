@@ -75,6 +75,8 @@ function contentFrame(item, width, height) {
     width: frameWidth,
     height: frameHeight,
     shortest,
+    outerWidth: width,
+    outerHeight: height,
     centerX: width / 2,
     centerY: height / 2,
   };
@@ -84,12 +86,22 @@ function densityCount(density, values) {
   return values[MOTIF_DENSITIES.indexOf(density)];
 }
 
+function fragmentRowCount(frame, density) {
+  const baseRows = densityCount(density, [1, 2, 3]);
+  const heightTier = frame.outerHeight >= 140 ? 1 : 0;
+  const largeTier = frame.outerHeight >= 220 ? 1 : 0;
+  const portraitTier = frame.outerHeight > frame.outerWidth * 1.35 ? 1 : 0;
+  const expansion = heightTier + largeTier + portraitTier;
+  const densityResponse = densityCount(density, [0.5, 0.75, 1]);
+  return Math.min(6, baseRows + Math.round(expansion * densityResponse));
+}
+
 function fragmentsGeometry(frame, motif, random) {
-  const count = densityCount(motif.density, [2, 4, 6]);
-  const rowCount = count / 2;
+  const rowCount = fragmentRowCount(frame, motif.density);
+  const portrait = frame.outerHeight > frame.outerWidth * 1.35;
   const compositionWidth = frame.width * 0.88;
   const band = clamp(frame.shortest * 0.078, 5, 10);
-  const gap = clamp(frame.shortest * 0.05, 4, 8);
+  const gap = clamp(frame.shortest * (portrait ? 0.075 : 0.05), 4, 10);
   const totalHeight = (rowCount * band) + ((rowCount - 1) * gap);
   const startY = frame.centerY - (totalHeight / 2);
   const widthScales = [0.2, 0.28, 0.38, 0.5];
@@ -124,8 +136,7 @@ function centerPoints(points, frame) {
   return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
 }
 
-function smoothPath(points) {
-  const tension = 0.92;
+function smoothPath(points, tension = 0.92) {
   let path = `M${tidy(points[0].x)} ${tidy(points[0].y)}`;
   for (let index = 0; index < points.length - 1; index += 1) {
     const previous = points[Math.max(0, index - 1)];
@@ -147,47 +158,20 @@ function smoothPath(points) {
 
 function rectangularScribblePoints(frame, motif, random) {
   const vertical = frame.height > frame.width * 1.18;
-  const settings = {
-    sparse: { samples: 5, turns: 0.58, amplitude: 0.22 },
-    balanced: { samples: 9, turns: 1.24, amplitude: 0.32 },
-    rich: { samples: 17, turns: 2.18, amplitude: 0.38 },
-  }[motif.density];
-  const structures = ['sweep', 'wave', 'loop', 'weave'];
-  const structure = structures[motif.seed % structures.length];
-  const phase = (random() - 0.5) * Math.PI;
+  const anchors = {
+    sparse: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [1, 0.69]],
+    balanced: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.9, 0.56], [1, 0.69]],
+    rich: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.89, 0.56], [0.95, 0.52], [1, 0.69]],
+  };
+  const sourcePoints = anchors[motif.density];
   const flip = random() > 0.5;
-  const normalized = [];
-
-  for (let index = 0; index < settings.samples; index += 1) {
-    const t = index / (settings.samples - 1);
-    const envelope = Math.sin(Math.PI * t);
-    const angle = (t * settings.turns * Math.PI * 2) + phase;
-    const organic = Math.sin((t * Math.PI * (settings.turns + 1.35)) - (phase * 0.4));
-    let x = t;
-    let y = 0.5;
-
-    if (structure === 'sweep') {
-      y += settings.amplitude * ((Math.sin((t - 0.08) * Math.PI * (settings.turns + 0.75) + phase) * 0.78) + ((t - 0.5) * 0.22));
-    } else if (structure === 'wave') {
-      y += settings.amplitude * ((Math.sin(angle) * 0.82) + (organic * 0.18));
-    } else if (structure === 'loop') {
-      x += Math.cos(angle) * settings.amplitude * 0.42 * envelope;
-      y += Math.sin(angle) * settings.amplitude * envelope;
-    } else {
-      x += Math.sin((angle * 1.35) + 0.4) * settings.amplitude * 0.16 * envelope;
-      y += settings.amplitude * ((Math.sin(angle) * 0.78) + (Math.sin((angle * 2.1) - 0.7) * 0.22));
-    }
-
-    const pointJitter = index > 0 && index < settings.samples - 1 ? (random() - 0.5) * 0.025 : 0;
-    normalized.push({
-      x: clamp(x + pointJitter, -0.08, 1.08),
-      y: clamp((flip ? 1 - y : y) + (pointJitter * 0.7), 0.05, 0.95),
-    });
-  }
-
+  const normalized = sourcePoints.map(([x, y], index) => ({
+    x: clamp(x + (index > 0 && index < sourcePoints.length - 1 ? (random() - 0.5) * 0.018 : 0), 0, 1),
+    y: clamp((flip ? 1 - y : y) + ((random() - 0.5) * 0.035), 0.05, 0.95),
+  }));
   const gestureDepth = vertical
-    ? Math.min(frame.width * 0.88, frame.height * 0.42)
-    : Math.min(frame.height * 0.88, frame.width * 0.42);
+    ? Math.min(frame.width, frame.height * 0.4)
+    : Math.min(frame.height, frame.width * 0.4);
   const mapped = normalized.map((point) => (vertical ? {
     x: frame.centerX + ((0.5 - point.y) * gestureDepth),
     y: frame.y + (point.x * frame.height),
@@ -195,7 +179,7 @@ function rectangularScribblePoints(frame, motif, random) {
     x: frame.x + (point.x * frame.width),
     y: frame.centerY + ((point.y - 0.5) * gestureDepth),
   }));
-  return { points: centerPoints(mapped, frame), structure };
+  return { points: centerPoints(mapped, frame), structure: 'gesture' };
 }
 
 function spiralScribblePoints(frame, motif, random) {
@@ -230,9 +214,12 @@ function scribbleGeometry(item, frame, motif, random) {
   const generated = ellipse
     ? spiralScribblePoints(frame, motif, random)
     : rectangularScribblePoints(frame, motif, random);
-  const strokeScale = densityCount(motif.density, [0.06, 0.052, 0.044]);
-  const strokeWidth = clamp(frame.shortest * strokeScale, 3.5, 9);
-  const path = smoothPath(generated.points);
+  const equivalentSize = Math.sqrt(frame.outerWidth * frame.outerHeight);
+  const spiralDensityAdjustment = densityCount(motif.density, [1.06, 1, 0.94]);
+  const strokeWidth = ellipse
+    ? clamp((2.6 + (equivalentSize * 0.031)) * spiralDensityAdjustment, 4.8, 10.5)
+    : clamp(frame.shortest * 0.055, 4, 10);
+  const path = smoothPath(generated.points, ellipse ? 0.92 : 1.05);
   const structure = ellipse ? 'spiral' : generated.structure;
   const laps = ellipse ? ` data-scribble-laps="${generated.laps}"` : '';
   return `<path d="${path}" data-scribble-structure="${structure}"${laps} fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;

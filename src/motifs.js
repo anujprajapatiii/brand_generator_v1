@@ -1,5 +1,4 @@
 import { MOTIF_DENSITIES, MOTIF_GLOWS, MOTIF_KINDS } from './config.js';
-import { normalizeEdges } from './edges.js';
 
 const RENDERABLE_KINDS = Object.freeze(MOTIF_KINDS.filter((kind) => !['auto', 'none'].includes(kind)));
 
@@ -65,29 +64,19 @@ export function resolvedMotifKind(candidate) {
 }
 
 function contentFrame(item, width, height) {
-  const edges = normalizeEdges(item.edges);
   const shortest = Math.min(width, height);
-  const basePadding = clamp(shortest * 0.17, 10, 30);
-  const connectorPadding = clamp(shortest * 0.045, 3, 8);
-  const inset = {
-    top: basePadding + (edges.top === 'slot' ? connectorPadding : 0),
-    right: basePadding + (edges.right === 'slot' ? connectorPadding : 0),
-    bottom: basePadding + (edges.bottom === 'slot' ? connectorPadding : 0),
-    left: basePadding + (edges.left === 'slot' ? connectorPadding : 0),
-  };
-  const attraction = (state) => (state === 'tab' ? 1 : state === 'slot' ? -1 : 0);
-  const bias = shortest * 0.035;
-  const dx = (attraction(edges.right) - attraction(edges.left)) * bias;
-  const dy = (attraction(edges.bottom) - attraction(edges.top)) * bias;
-  const frameWidth = Math.max(12, width - inset.left - inset.right);
-  const frameHeight = Math.max(12, height - inset.top - inset.bottom);
+  const basePadding = clamp(shortest * (item.type === 'ellipse' ? 0.22 : 0.17), 10, 32);
+  const frameWidth = Math.max(12, width - (basePadding * 2));
+  const frameHeight = Math.max(12, height - (basePadding * 2));
 
   return {
-    x: clamp(inset.left + dx, 5, width - frameWidth - 5),
-    y: clamp(inset.top + dy, 5, height - frameHeight - 5),
+    x: (width - frameWidth) / 2,
+    y: (height - frameHeight) / 2,
     width: frameWidth,
     height: frameHeight,
     shortest,
+    centerX: width / 2,
+    centerY: height / 2,
   };
 }
 
@@ -96,99 +85,126 @@ function densityCount(density, values) {
 }
 
 function fragmentsGeometry(frame, motif, random) {
-  const areaScale = clamp((frame.width * frame.height) / 14000, 0.55, 1.7);
-  const count = clamp(Math.round(densityCount(motif.density, [2, 4, 6]) * areaScale), 1, 8);
-  const unit = clamp(frame.shortest * 0.055, 4, 10);
-  const band = clamp(unit * 1.15, 5, 12);
-  const rows = Math.max(1, Math.floor(frame.height / (band * 2.1)));
+  const count = densityCount(motif.density, [2, 4, 6]);
+  const rowCount = count / 2;
+  const band = clamp(frame.shortest * 0.09, 6, 12);
+  const gap = clamp(frame.shortest * 0.055, 4, 9);
+  const totalHeight = (rowCount * band) + ((rowCount - 1) * gap);
+  const startY = frame.centerY - (totalHeight / 2);
+  const widthScales = [0.24, 0.34, 0.46, 0.6];
   const elements = [];
 
-  for (let index = 0; index < count; index += 1) {
-    const row = index % rows;
-    const rowY = frame.y + ((row + 0.5) / rows) * frame.height;
-    const widthUnits = 1 + Math.floor(random() * 5);
-    const elementWidth = Math.min(frame.width * 0.46, widthUnits * unit * 1.8);
-    const maxX = Math.max(0, frame.width - elementWidth);
-    const x = frame.x + (random() * maxX);
-    const y = clamp(rowY - (band / 2) + ((random() - 0.5) * band), frame.y, frame.y + frame.height - band);
-    const stepped = random() > 0.62 && elementWidth > unit * 3;
+  for (let row = 0; row < rowCount; row += 1) {
+    const rawWidths = [0, 1].map(() => {
+      const scale = pick(widthScales, random);
+      return clamp(frame.width * scale, 10, frame.width * 0.6);
+    });
+    const rawTotal = rawWidths[0] + rawWidths[1] + gap;
+    const fitScale = Math.min(1, frame.width / rawTotal);
+    const widths = rawWidths.map((width) => width * fitScale);
+    const rowWidth = widths[0] + widths[1] + gap;
+    let x = frame.centerX - (rowWidth / 2);
+    const y = startY + (row * (band + gap));
 
-    if (stepped) {
-      const split = elementWidth * (0.38 + (random() * 0.24));
-      elements.push(`<path d="M${tidy(x)} ${tidy(y)}h${tidy(split)}v${tidy(band * 0.65)}h${tidy(elementWidth - split)}v${tidy(band)}h-${tidy(elementWidth - split)}v-${tidy(band * 0.65)}h-${tidy(split)}Z" fill="#fff"/>`);
-    } else {
-      elements.push(`<rect x="${tidy(x)}" y="${tidy(y)}" width="${tidy(elementWidth)}" height="${tidy(band)}" rx="${tidy(Math.min(2, band * 0.18))}" fill="#fff"/>`);
-    }
+    widths.forEach((elementWidth) => {
+      elements.push(`<rect x="${tidy(x)}" y="${tidy(y)}" width="${tidy(elementWidth)}" height="${tidy(band)}" rx="${tidy(band * 0.45)}" fill="#fff"/>`);
+      x += elementWidth + gap;
+    });
   }
 
   return elements.join('');
 }
 
+function sampleTemplate(template, count) {
+  return Array.from({ length: count }, (_, index) => {
+    const position = (index / (count - 1)) * (template.length - 1);
+    const lower = Math.floor(position);
+    const upper = Math.min(template.length - 1, Math.ceil(position));
+    const progress = position - lower;
+    return {
+      x: template[lower][0] + ((template[upper][0] - template[lower][0]) * progress),
+      y: template[lower][1] + ((template[upper][1] - template[lower][1]) * progress),
+    };
+  });
+}
+
+function centerPoints(points, frame) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const dx = frame.centerX - ((Math.min(...xs) + Math.max(...xs)) / 2);
+  const dy = frame.centerY - ((Math.min(...ys) + Math.max(...ys)) / 2);
+  return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+}
+
+function smoothPath(points) {
+  const tension = 0.9;
+  let path = `M${tidy(points[0].x)} ${tidy(points[0].y)}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[Math.max(0, index - 1)];
+    const start = points[index];
+    const end = points[index + 1];
+    const next = points[Math.min(points.length - 1, index + 2)];
+    const controlOne = {
+      x: start.x + (((end.x - previous.x) * tension) / 6),
+      y: start.y + (((end.y - previous.y) * tension) / 6),
+    };
+    const controlTwo = {
+      x: end.x - (((next.x - start.x) * tension) / 6),
+      y: end.y - (((next.y - start.y) * tension) / 6),
+    };
+    path += ` C${tidy(controlOne.x)} ${tidy(controlOne.y)} ${tidy(controlTwo.x)} ${tidy(controlTwo.y)} ${tidy(end.x)} ${tidy(end.y)}`;
+  }
+  return path;
+}
+
 function scribbleGeometry(frame, motif, random) {
   const vertical = frame.height > frame.width * 1.18;
-  const count = densityCount(motif.density, [3, 5, 7]);
-  const points = [];
-  for (let index = 0; index < count; index += 1) {
-    const progress = count === 1 ? 0.5 : index / (count - 1);
-    if (vertical) {
-      points.push({
-        x: frame.x + (frame.width * (0.22 + (random() * 0.56))),
-        y: frame.y + (frame.height * progress),
-      });
-    } else {
-      points.push({
-        x: frame.x + (frame.width * progress),
-        y: frame.y + (frame.height * (0.22 + (random() * 0.56))),
-      });
-    }
-  }
-  const strokeWidth = clamp(frame.shortest * 0.045, 3, 10);
-  const path = points.map((point, index) => `${index ? 'L' : 'M'}${tidy(point.x)} ${tidy(point.y)}`).join(' ');
+  const template = [
+    [0, 0.57], [0.12, 0.66], [0.24, 0.72], [0.28, 0.69], [0.265, 0.57],
+    [0.22, 0.35], [0.225, 0.18], [0.3, 0.16], [0.43, 0.3], [0.61, 0.5],
+    [0.72, 0.63], [0.78, 0.61], [0.82, 0.49], [0.9, 0.55], [1, 0.72],
+  ];
+  const count = densityCount(motif.density, [9, 12, 15]);
+  const flip = random() > 0.5;
+  const normalized = sampleTemplate(template, count).map((point, index) => ({
+    x: clamp(point.x + (index > 0 && index < count - 1 ? (random() - 0.5) * 0.025 : 0), 0, 1),
+    y: clamp((flip ? 1 - point.y : point.y) + ((random() - 0.5) * 0.045), 0.08, 0.92),
+  }));
+  const mapped = normalized.map((point) => (vertical ? {
+    x: frame.x + ((1 - point.y) * frame.width),
+    y: frame.y + (point.x * frame.height),
+  } : {
+    x: frame.x + (point.x * frame.width),
+    y: frame.y + (point.y * frame.height),
+  }));
+  const points = centerPoints(mapped, frame);
+  const strokeWidth = clamp(frame.shortest * 0.055, 4, 10);
+  const path = smoothPath(points);
   return `<path d="${path}" fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
 }
 
-function dotsGeometry(frame, motif, random) {
-  const vertical = frame.height > frame.width * 1.18;
+function dotsGeometry(frame, motif) {
+  const square = Math.abs(frame.width - frame.height) / Math.max(frame.width, frame.height) < 0.18;
+  const vertical = frame.height > frame.width * 1.18 || (square && motif.seed % 2 === 1);
   const count = densityCount(motif.density, [1, 3, 5]);
-  const radius = clamp(frame.shortest * (count === 1 ? 0.13 : 0.075), 4, 14);
+  const radius = clamp(frame.shortest * (count === 1 ? 0.15 : 0.055), count === 1 ? 6 : 3, count === 1 ? 18 : 8);
+  const axisLength = vertical ? frame.height : frame.width;
+  const spacing = count === 1 ? 0 : Math.min(radius * 2.8, (axisLength - (radius * 2)) / (count - 1));
+  const start = -(spacing * (count - 1)) / 2;
   const elements = [];
   for (let index = 0; index < count; index += 1) {
-    const progress = count === 1 ? 0.5 : index / (count - 1);
-    const jitterX = (random() - 0.5) * Math.min(radius, frame.width * 0.08);
-    const jitterY = (random() - 0.5) * Math.min(radius, frame.height * 0.08);
-    const cx = vertical
-      ? frame.x + (frame.width * 0.5) + jitterX
-      : frame.x + radius + ((frame.width - (radius * 2)) * progress);
-    const cy = vertical
-      ? frame.y + radius + ((frame.height - (radius * 2)) * progress)
-      : frame.y + (frame.height * 0.5) + jitterY;
+    const offset = start + (index * spacing);
+    const cx = frame.centerX + (vertical ? 0 : offset);
+    const cy = frame.centerY + (vertical ? offset : 0);
     elements.push(`<circle cx="${tidy(cx)}" cy="${tidy(cy)}" r="${tidy(radius)}" fill="#fff"/>`);
   }
   return elements.join('');
 }
 
-function curveGeometry(frame, motif, random) {
-  const radius = Math.max(5, Math.min(frame.width, frame.height) * (0.32 + (random() * 0.13)));
-  const centerX = frame.x + (frame.width * (0.42 + (random() * 0.16)));
-  const centerY = frame.y + (frame.height * (0.42 + (random() * 0.16)));
-  const startAngle = random() * Math.PI * 2;
-  const sweepDegrees = densityCount(motif.density, [95, 155, 225]);
-  const sweep = (sweepDegrees * Math.PI) / 180;
-  const endAngle = startAngle + sweep;
-  const startX = centerX + (Math.cos(startAngle) * radius);
-  const startY = centerY + (Math.sin(startAngle) * radius);
-  const endX = centerX + (Math.cos(endAngle) * radius);
-  const endY = centerY + (Math.sin(endAngle) * radius);
-  const largeArc = sweepDegrees > 180 ? 1 : 0;
-  const strokeWidth = clamp(frame.shortest * 0.045, 3, 10);
-  return `<path d="M${tidy(startX)} ${tidy(startY)} A${tidy(radius)} ${tidy(radius)} 0 ${largeArc} 1 ${tidy(endX)} ${tidy(endY)}" fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-}
-
 function motifGeometry(kind, frame, motif, random) {
   if (kind === 'fragments') return fragmentsGeometry(frame, motif, random);
   if (kind === 'scribble') return scribbleGeometry(frame, motif, random);
-  if (kind === 'dots') return dotsGeometry(frame, motif, random);
-  if (kind === 'curve') return curveGeometry(frame, motif, random);
+  if (kind === 'dots') return dotsGeometry(frame, motif);
   return '';
 }
 

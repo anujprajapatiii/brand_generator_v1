@@ -177,7 +177,7 @@ function motifControlsMarkup(selectedItem) {
         ${MOTIF_GLOWS.map((glow) => `<button class="${motif.glow === glow ? 'active' : ''}" data-motif-glow="${glow}" type="button" aria-pressed="${motif.glow === glow}" ${motif.kind === 'none' ? 'disabled' : ''}>${glow}</button>`).join('')}
       </div>
     </div>
-    <p class="hint">Seeded content keeps its character while resizing and shifts around slots and tabs.</p>`;
+    <p class="hint">Seeded content stays centred and reflows smoothly at every footprint.</p>`;
 }
 
 function gutterControlsMarkup(gutter, showGrid) {

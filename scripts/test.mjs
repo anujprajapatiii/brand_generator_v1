@@ -23,7 +23,7 @@ import {
   itemsOverlap,
 } from '../src/grid.js';
 import { createDuplicateItem } from '../src/items.js';
-import { createRandomMotif, normalizeMotif, resolvedMotifKind } from '../src/motifs.js';
+import { createRandomMotif, normalizeMotif, renderMotifLayer, resolvedMotifKind } from '../src/motifs.js';
 import { PRIMITIVES, renderPrimitive } from '../src/primitives.js';
 import { createRandomComposition, createRandomPrimitive, randomEdges } from '../src/random.js';
 import { getStackPosition, reorderStack } from '../src/stack.js';
@@ -34,7 +34,7 @@ assert.deepEqual(Object.keys(PRIMITIVES), ['rectangle', 'ellipse']);
 assert.equal(PRIMITIVES.line, undefined);
 assert.deepEqual(Object.keys(SIZE_PRESETS), ['1x1', '1x2', '2x2', '2x3', '3x3']);
 assert.equal(GRID.cell, 80);
-assert.deepEqual(MOTIF_KINDS, ['auto', 'none', 'fragments', 'scribble', 'dots', 'curve']);
+assert.deepEqual(MOTIF_KINDS, ['auto', 'none', 'fragments', 'scribble', 'dots']);
 assert.deepEqual(MOTIF_DENSITIES, ['sparse', 'balanced', 'rich']);
 assert.deepEqual(MOTIF_GLOWS, ['off', 'soft', 'bright']);
 
@@ -102,6 +102,53 @@ assert.equal(resolvedMotifKind(normalizeMotif(stableMotifItem.motif)), resolvedM
 
 const hiddenMotif = renderPrimitive({ ...stableMotifItem, motif: { ...stableMotifItem.motif, kind: 'none' } }, DEFAULT_TOKENS);
 assert.doesNotMatch(hiddenMotif, /class="motif-layer"/);
+
+const fragmentLayer = renderMotifLayer({
+  id: 'fragments-centered', type: 'rectangle', edges: applyEdgePreset('alternate'),
+  motif: { kind: 'fragments', seed: 813, density: 'rich', glow: 'off' },
+}, 160, 160, 'fragment-mask');
+const fragmentRects = [...fragmentLayer.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="([\d.]+)" fill="#fff"\/>/g)]
+  .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), radius: Number(match[5]) }));
+assert.equal(fragmentRects.length, 6);
+assert.ok(fragmentRects.every((rect) => rect.radius > 0));
+assert.ok(new Set(fragmentRects.map((rect) => rect.width)).size >= 2);
+assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.x)) + Math.max(...fragmentRects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), 80);
+assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.y)) + Math.max(...fragmentRects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), 80);
+
+const scribbleLayer = renderMotifLayer({
+  id: 'scribble-smooth', type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'scribble', seed: 41, density: 'rich', glow: 'off' },
+}, 240, 120, 'scribble-mask');
+assert.match(scribbleLayer, /<path d="M[^"]+ C/);
+assert.doesNotMatch(scribbleLayer, / L| A/);
+assert.match(scribbleLayer, /stroke-linecap="round" stroke-linejoin="round"/);
+
+const horizontalDots = renderMotifLayer({
+  id: 'dots-horizontal', type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'dots', seed: 812, density: 'balanced', glow: 'off' },
+}, 160, 160, 'dots-horizontal-mask');
+const horizontalCircles = [...horizontalDots.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)]
+  .map((match) => ({ x: Number(match[1]), y: Number(match[2]), radius: Number(match[3]) }));
+assert.equal(horizontalCircles.length, 3);
+assert.deepEqual([...new Set(horizontalCircles.map((circle) => circle.y))], [80]);
+assert.equal(horizontalCircles.reduce((sum, circle) => sum + circle.x, 0) / horizontalCircles.length, 80);
+
+const verticalDots = renderMotifLayer({
+  id: 'dots-vertical', type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'dots', seed: 812, density: 'rich', glow: 'off' },
+}, 80, 160, 'dots-vertical-mask');
+const verticalCircles = [...verticalDots.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)]
+  .map((match) => ({ x: Number(match[1]), y: Number(match[2]), radius: Number(match[3]) }));
+assert.equal(verticalCircles.length, 5);
+assert.deepEqual([...new Set(verticalCircles.map((circle) => circle.x))], [40]);
+assert.equal(verticalCircles.reduce((sum, circle) => sum + circle.y, 0) / verticalCircles.length, 80);
+
+const singleDot = renderMotifLayer({
+  id: 'dot-single', type: 'rectangle', edges: applyEdgePreset('flat'),
+  motif: { kind: 'dots', seed: 812, density: 'sparse', glow: 'off' },
+}, 160, 160, 'dot-single-mask');
+const singleDotRadius = Number(singleDot.match(/<circle cx="[\d.]+" cy="[\d.]+" r="([\d.]+)"/)[1]);
+assert.ok(singleDotRadius > horizontalCircles[0].radius);
 
 const outline = renderPrimitive({
   id: 'rectangle-outline',
@@ -173,6 +220,7 @@ assert.match(interfaceMarkup, /id="motif-kind"/);
 assert.match(interfaceMarkup, /id="reroll-motif"/);
 assert.match(interfaceMarkup, /data-motif-density="balanced"/);
 assert.match(interfaceMarkup, /data-motif-glow="soft"/);
+assert.doesNotMatch(interfaceMarkup, /<option value="curve"/);
 assert.doesNotMatch(interfaceMarkup, /data-grid-coordinate|data-select-item|Inspector|System structure|layers/i);
 assert.doesNotMatch(interfaceMarkup, /data-add-primitive="line"/);
 
@@ -326,7 +374,7 @@ const [indexSource, stylesSource, mainSource] = await Promise.all([
   readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
 ]);
 assert.match(indexSource, /tasa-orbiter/);
-assert.match(indexSource, /src\/main\.js\?v=4b7ac98/);
+assert.match(indexSource, /src\/main\.js\?v=motif-refine/);
 assert.doesNotMatch(indexSource, /Manrope|DM\+Mono|fonts\.googleapis/);
 assert.match(stylesSource, /--font: "TASA Orbiter", sans-serif/);
 assert.doesNotMatch(stylesSource, /font-mono|font-sans|Manrope|DM Mono/);
@@ -334,6 +382,12 @@ assert.match(mainSource, /\['Backspace', 'Delete'\]/);
 assert.match(mainSource, /window\.confirm\('Clear every shape from this board\?'\)/);
 assert.match(mainSource, /sidebarScrollTop = root\.querySelector\('\.sidebar'\)\?\.scrollTop \?\? 0/);
 assert.match(mainSource, /sidebar\.scrollTop = sidebarScrollTop/);
+const motifSource = await readFile(new URL('../src/motifs.js', import.meta.url), 'utf8');
+assert.doesNotMatch(motifSource, /curveGeometry|kind === 'curve'/);
+const buildSource = await readFile(new URL('./build.mjs', import.meta.url), 'utf8');
+assert.match(buildSource, /GITHUB_SHA/);
+assert.match(buildSource, /styles\\\.css/);
+assert.match(buildSource, /main\\\.js/);
 
 const occupied = [{ column: 0, row: 0, size: '2x2' }];
 const openPosition = findAvailablePosition(occupied, '1x1', 0);

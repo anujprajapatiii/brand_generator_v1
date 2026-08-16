@@ -15,19 +15,19 @@ function connectorMetrics(width, height) {
   };
 }
 
-function baseGeometry(type, width, height) {
+function baseGeometry(type, width, height, fill = '#fff') {
   if (type === 'ellipse') {
-    return `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${width / 2}" ry="${height / 2}" fill="#fff"/>`;
+    return `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${width / 2}" ry="${height / 2}" fill="${fill}"/>`;
   }
 
   const radius = Math.max(8, Math.min(18, Math.min(width, height) * 0.12));
-  return `<rect width="${width}" height="${height}" rx="${radius}" fill="#fff"/>`;
+  return `<rect width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
 }
 
-function connectorGeometry(edge, state, width, height, metrics) {
+function connectorGeometry(edge, state, width, height, metrics, fillOverride = null) {
   if (state === 'flat') return '';
 
-  const fill = state === 'tab' ? '#fff' : '#000';
+  const fill = fillOverride ?? (state === 'tab' ? '#fff' : '#000');
   const { depth, horizontalSpan, verticalSpan } = metrics;
   const positions = {
     top: {
@@ -57,6 +57,19 @@ function connectorGeometry(edge, state, width, height, metrics) {
   };
   const rect = positions[edge];
   return `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${fill}"/>`;
+}
+
+function slotBoundaryBlocker(edge, width, height, metrics) {
+  const overlap = 1.5;
+  const { depth, horizontalSpan, verticalSpan } = metrics;
+  const positions = {
+    top: { x: (width - horizontalSpan) / 2, y: -overlap, width: horizontalSpan, height: depth + overlap },
+    right: { x: width - depth, y: (height - verticalSpan) / 2, width: depth + overlap, height: verticalSpan },
+    bottom: { x: (width - horizontalSpan) / 2, y: height - depth, width: horizontalSpan, height: depth + overlap },
+    left: { x: -overlap, y: (height - verticalSpan) / 2, width: depth + overlap, height: verticalSpan },
+  };
+  const rect = positions[edge];
+  return `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="#000"/>`;
 }
 
 function silhouetteMarkup(item, width, height, color) {
@@ -105,6 +118,19 @@ export const PRIMITIVES = Object.freeze({
     iconClass: 'ellipse',
   }),
 });
+
+export function renderGridExclusion(item, gutter = 0) {
+  const rect = gridRect(item, gutter);
+  const edges = normalizeEdges(item.edges);
+  const metrics = connectorMetrics(rect.width, rect.height);
+  const connectors = Object.entries(edges).map(([edge, state]) => {
+    if (state === 'tab') return connectorGeometry(edge, state, rect.width, rect.height, metrics, '#000');
+    if (state === 'slot') return slotBoundaryBlocker(edge, rect.width, rect.height, metrics);
+    return '';
+  }).join('');
+
+  return `<g transform="translate(${rect.x} ${rect.y})">${baseGeometry(item.type, rect.width, rect.height, '#000')}${connectors}</g>`;
+}
 
 export function renderPrimitive(item, tokens, { interactive = true, gutter = 0 } = {}) {
   const definition = PRIMITIVES[item.type];

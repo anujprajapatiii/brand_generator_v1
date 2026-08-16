@@ -7,6 +7,7 @@ import {
   normalizeGridItem,
   normalizeGutter,
 } from './grid.js';
+import { createDuplicateItem } from './items.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
 import { reorderStack } from './stack.js';
 import {
@@ -113,6 +114,25 @@ function invertSelectedEdges() {
   updateSelected((item) => {
     item.edges = invertEdges(item.edges);
   }, 'Connectors inverted');
+}
+
+function duplicateSelected() {
+  const item = selectedItem();
+  if (!item) return;
+  const itemNumber = motifDocument.nextItemId;
+  const startIndex = (item.row * GRID.columns) + item.column + 1;
+  const position = findAvailablePosition(motifDocument.items, item.size, startIndex);
+  const duplicate = createDuplicateItem(item, itemNumber, position, PRIMITIVES[item.type].label);
+  motifDocument.nextItemId += 1;
+  motifDocument.items.push(duplicate);
+  selectedId = duplicate.id;
+  commitDocument(`${PRIMITIVES[item.type].label} duplicated`);
+}
+
+function handleKeyboardShortcut(event) {
+  if (!event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'd') return;
+  event.preventDefault();
+  if (!event.repeat) duplicateSelected();
 }
 
 function reorderSelected(action) {
@@ -278,6 +298,11 @@ function bindInterface() {
   });
   gutterSlider?.addEventListener('change', () => showToast(`Grid gutter set to ${motifDocument.gutter}px`));
 
+  root.querySelector('#toggle-grid')?.addEventListener('click', () => {
+    motifDocument.showGrid = motifDocument.showGrid === false;
+    commitDocument(motifDocument.showGrid ? 'Grid shown' : 'Grid hidden');
+  });
+
   root.querySelectorAll('[data-appearance]').forEach((button) => {
     button.addEventListener('click', () => updateSelected((item) => {
       item.appearance = button.dataset.appearance;
@@ -324,4 +349,5 @@ function bindInterface() {
   canvas?.addEventListener('pointercancel', endDrag);
 }
 
+window.addEventListener('keydown', handleKeyboardShortcut);
 render();

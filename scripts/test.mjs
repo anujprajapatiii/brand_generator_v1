@@ -12,6 +12,7 @@ import {
   normalizeGridItem,
   itemsOverlap,
 } from '../src/grid.js';
+import { createDuplicateItem } from '../src/items.js';
 import { PRIMITIVES, renderPrimitive } from '../src/primitives.js';
 import { getStackPosition, reorderStack } from '../src/stack.js';
 import { loadWorkspace } from '../src/store.js';
@@ -83,6 +84,7 @@ const interfaceMarkup = renderApp({
     version: 2,
     name: 'Test composition',
     gutter: 12,
+    showGrid: true,
     items: [{
       id: 'rectangle-1', name: 'Rectangle 1', type: 'rectangle', column: 0, row: 0,
       size: '1x1', token: 'blue', edges: applyEdgePreset('alternate'),
@@ -98,8 +100,12 @@ assert.match(interfaceMarkup, /Edge connectors/);
 assert.match(interfaceMarkup, /id="invert-edges"/);
 assert.match(interfaceMarkup, /data-edge="top"/);
 assert.match(interfaceMarkup, /id="grid-gutter"/);
+assert.match(interfaceMarkup, /id="toggle-grid"/);
+assert.match(interfaceMarkup, /id="grid-visibility-mask"/);
+assert.match(interfaceMarkup, /y="-1.5"/);
 assert.match(interfaceMarkup, /12px gutter/);
 assert.match(interfaceMarkup, /data-stack-action="send-front"/);
+assert.match(interfaceMarkup, /⌘D duplicate/);
 assert.doesNotMatch(interfaceMarkup, /data-grid-coordinate|data-select-item|Inspector|System structure|layers/i);
 assert.doesNotMatch(interfaceMarkup, /data-add-primitive="line"/);
 
@@ -119,6 +125,7 @@ globalThis.localStorage = {
 const migratedWorkspace = loadWorkspace();
 assert.equal(migratedWorkspace.document.version, 2);
 assert.equal(migratedWorkspace.document.gutter, 0);
+assert.equal(migratedWorkspace.document.showGrid, true);
 assert.deepEqual(migratedWorkspace.document.items.map((item) => item.type), ['rectangle']);
 assert.deepEqual(migratedWorkspace.document.items[0].edges, {
   top: 'slot', right: 'tab', bottom: 'flat', left: 'flat',
@@ -152,6 +159,32 @@ assert.deepEqual(reorderStack(stack, 'c', 'back').map((item) => item.id), ['a', 
 assert.deepEqual(reorderStack(stack, 'd', 'send-back').map((item) => item.id), ['d', 'a', 'b', 'c']);
 assert.deepEqual(reorderStack(stack, 'a', 'send-front').map((item) => item.id), ['b', 'c', 'd', 'a']);
 assert.deepEqual(getStackPosition(stack, 'c'), { index: 2, count: 4 });
+
+const duplicateSource = {
+  id: 'rectangle-2', name: 'Rectangle 2', type: 'rectangle', column: 1, row: 1,
+  size: '2x2', token: 'blue', edges: { top: 'slot', right: 'tab', bottom: 'flat', left: 'flat' },
+  appearance: 'outline', borderWidth: 8,
+};
+const duplicate = createDuplicateItem(duplicateSource, 8, { column: 4, row: 5 }, 'Rectangle');
+assert.equal(duplicate.id, 'rectangle-8');
+assert.equal(duplicate.name, 'Rectangle 8');
+assert.equal(duplicate.column, 4);
+assert.equal(duplicate.row, 5);
+assert.deepEqual(duplicate.edges, duplicateSource.edges);
+assert.notEqual(duplicate.edges, duplicateSource.edges);
+
+const hiddenGridMarkup = renderApp({
+  document: {
+    version: 2, name: 'Hidden grid', gutter: 18, showGrid: false,
+    items: [{ ...duplicate, id: 'rectangle-8' }],
+  },
+  tokens: DEFAULT_TOKENS,
+  selectedId: 'rectangle-8',
+  theme: 'light',
+});
+assert.match(hiddenGridMarkup, /canvas-shell grid-hidden/);
+assert.match(hiddenGridMarkup, /aria-checked="false"/);
+assert.doesNotMatch(hiddenGridMarkup, /class="grid-cell"/);
 
 assert.deepEqual(canvasPointToGrid(168, 247, '2x2', { x: 12, y: 7 }), { column: 2, row: 3 });
 assert.equal(itemsOverlap(

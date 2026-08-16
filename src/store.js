@@ -23,6 +23,7 @@ function createInitialDocument() {
     id: 'untitled-composition',
     name: 'Untitled composition',
     gutter: GRID.defaultGutter,
+    showGrid: true,
     nextItemId: 4,
     items: [
       {
@@ -101,6 +102,7 @@ function sanitizeDocument(candidate, migrateLegacy = false) {
     id: 'untitled-composition',
     name: String(candidate.name || 'Untitled composition').slice(0, 80),
     gutter: normalizeGutter(candidate.gutter),
+    showGrid: candidate.showGrid !== false,
     nextItemId: Math.max(Number(candidate.nextItemId) || 1, items.length + 1),
     items,
   };

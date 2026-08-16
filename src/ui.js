@@ -1,6 +1,6 @@
 import { BORDER_WIDTHS, CANVAS_SIZE, EDGE_KEYS, GRID, SIZE_PRESETS } from './config.js';
 import { getGridMetrics, getSizePreset, gridRect, normalizeGutter } from './grid.js';
-import { PRIMITIVES, renderPrimitive } from './primitives.js';
+import { PRIMITIVES, renderGridExclusion, renderPrimitive } from './primitives.js';
 import { getStackPosition } from './stack.js';
 
 function escapeHtml(value) {
@@ -17,7 +17,8 @@ function tidyMetric(value) {
   return Number(value.toFixed(4));
 }
 
-function gridMarkup(gutter) {
+function gridMarkup(gutter, items, visible) {
+  if (!visible) return '';
   const metrics = getGridMetrics(gutter);
   const cells = [];
   for (let row = 0; row < GRID.rows; row += 1) {
@@ -25,7 +26,14 @@ function gridMarkup(gutter) {
       cells.push(`<rect class="grid-cell" x="${tidyMetric(column * metrics.pitch)}" y="${tidyMetric(row * metrics.pitch)}" width="${tidyMetric(metrics.cell)}" height="${tidyMetric(metrics.cell)}"/>`);
     }
   }
-  return `<g class="grid-layer" aria-hidden="true">${cells.join('')}</g>`;
+  const exclusions = items.map((item) => renderGridExclusion(item, gutter)).join('');
+  return `<defs>
+    <mask id="grid-visibility-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${CANVAS_SIZE}" height="${CANVAS_SIZE}">
+      <rect width="${CANVAS_SIZE}" height="${CANVAS_SIZE}" fill="#fff"/>
+      ${exclusions}
+    </mask>
+  </defs>
+  <g class="grid-layer" mask="url(#grid-visibility-mask)" aria-hidden="true">${cells.join('')}</g>`;
 }
 
 function selectionMarkup(item, gutter) {
@@ -46,8 +54,9 @@ function selectionMarkup(item, gutter) {
 
 function canvasMarkup(document, tokens, selectedId) {
   const gutter = normalizeGutter(document.gutter);
+  const showGrid = document.showGrid !== false;
   const selectedItem = document.items.find((item) => item.id === selectedId);
-  return `${gridMarkup(gutter)}
+  return `${gridMarkup(gutter, document.items, showGrid)}
     ${document.items.map((item) => renderPrimitive(item, tokens, { gutter })).join('')}
     ${selectionMarkup(selectedItem, gutter)}`;
 }
@@ -103,11 +112,15 @@ function appearanceMarkup(selectedItem) {
   </div>`;
 }
 
-function gutterControlsMarkup(gutter) {
+function gutterControlsMarkup(gutter, showGrid) {
   const value = normalizeGutter(gutter);
   const progress = (value / GRID.maxGutter) * 100;
   return `<section class="control-section gutter-section">
     <div class="section-heading"><p class="eyebrow">Grid gutters</p><span>Canvas-wide</span></div>
+    <div class="grid-visibility-row">
+      <span>Show grid</span>
+      <button class="grid-visibility-toggle ${showGrid ? 'active' : ''}" id="toggle-grid" type="button" role="switch" aria-checked="${showGrid}" aria-label="Show grid"><span></span></button>
+    </div>
     <div class="gutter-readout"><span>Gap between cells</span><output id="grid-gutter-value" for="grid-gutter">${value}px</output></div>
     <input class="gutter-slider" id="grid-gutter" type="range" min="${GRID.defaultGutter}" max="${GRID.maxGutter}" step="1" value="${value}" style="--range-progress:${progress}%" aria-label="Grid gutter in pixels">
     <div class="range-scale"><span>${GRID.defaultGutter}px</span><span>${GRID.maxGutter}px</span></div>
@@ -195,6 +208,7 @@ function tokensMarkup(tokens) {
 export function renderApp({ document, tokens, selectedId, theme }) {
   const selectedItem = document.items.find((item) => item.id === selectedId);
   const gutter = normalizeGutter(document.gutter);
+  const showGrid = document.showGrid !== false;
   const gridMetrics = getGridMetrics(gutter);
 
   return `<main class="app">
@@ -202,7 +216,7 @@ export function renderApp({ document, tokens, selectedId, theme }) {
       <div class="brand"><span class="brandmark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Motif</div>
       <div class="project"><span>/</span><strong>${escapeHtml(document.name)}</strong><span class="save-status"><i></i>Saved locally</span></div>
       <div class="top-actions">
-        <span class="grid-status" id="grid-status-copy"><i aria-hidden="true"></i>${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap</span>
+        <span class="grid-status" id="grid-status-copy"><i aria-hidden="true"></i>${showGrid ? `${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap` : 'Grid hidden'}</span>
         <button class="btn" id="remix" type="button">Remix layout</button>
         <button class="theme-switch ${theme === 'dark' ? 'active' : ''}" id="theme" type="button" aria-label="Toggle dark mode"><span></span></button>
         <button class="btn primary" id="export" type="button">Export SVG <span aria-hidden="true">↓</span></button>
@@ -217,7 +231,7 @@ export function renderApp({ document, tokens, selectedId, theme }) {
         </div>
         <div class="primitive-list">${primitiveLibraryMarkup()}</div>
 
-        ${gutterControlsMarkup(gutter)}
+        ${gutterControlsMarkup(gutter, showGrid)}
 
         ${shapeControlsMarkup(selectedItem, tokens, document.items)}
 
@@ -231,12 +245,12 @@ export function renderApp({ document, tokens, selectedId, theme }) {
       <section class="stage">
         <div class="canvas-frame">
           <div class="canvas-meta"><span>Composition plane</span><span id="grid-metrics">${tidyMetric(gridMetrics.cell)}px cell · ${gutter}px gutter · ${CANVAS_SIZE}px</span></div>
-          <div class="canvas-shell">
+          <div class="canvas-shell ${showGrid ? '' : 'grid-hidden'}">
             <svg id="canvas" class="canvas" viewBox="0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grid-based brand composition">
               ${canvasMarkup(document, tokens, selectedId)}
             </svg>
           </div>
-          <div class="canvas-footer"><span>Select or drag a shape · edges cycle flat / slot / tab</span><span>Schema v${document.version}</span></div>
+          <div class="canvas-footer"><span>Select or drag · ⌘D duplicate · edges cycle flat / slot / tab</span><span>Schema v${document.version}</span></div>
         </div>
       </section>
     </div>
@@ -246,6 +260,7 @@ export function renderApp({ document, tokens, selectedId, theme }) {
 
 export function updateGutterPreview(root, { document, tokens, selectedId }) {
   const gutter = normalizeGutter(document.gutter);
+  const showGrid = document.showGrid !== false;
   const metrics = getGridMetrics(gutter);
   const canvas = root.querySelector('#canvas');
   if (canvas) canvas.innerHTML = canvasMarkup(document, tokens, selectedId);
@@ -257,7 +272,7 @@ export function updateGutterPreview(root, { document, tokens, selectedId }) {
   const metricCopy = root.querySelector('#grid-metrics');
   if (metricCopy) metricCopy.textContent = `${tidyMetric(metrics.cell)}px cell · ${gutter}px gutter · ${CANVAS_SIZE}px`;
   const statusCopy = root.querySelector('#grid-status-copy');
-  if (statusCopy) statusCopy.innerHTML = `<i aria-hidden="true"></i>${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap`;
+  if (statusCopy) statusCopy.innerHTML = `<i aria-hidden="true"></i>${showGrid ? `${GRID.columns} × ${GRID.rows} grid · ${gutter}px gap` : 'Grid hidden'}`;
 }
 
 export function updateDraggedItem(root, item, gutter = GRID.defaultGutter) {

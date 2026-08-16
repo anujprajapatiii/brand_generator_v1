@@ -23,9 +23,21 @@ export const DEFAULT_TOKENS = Object.freeze({
 });
 
 export const STORAGE_KEYS = Object.freeze({
-  document: 'motif-document-v1',
+  document: 'motif-document-v2',
+  legacyDocument: 'motif-document-v1',
   tokens: 'motif-tokens',
   theme: 'motif-theme',
 });
 
-export const DOCUMENT_VERSION = 1;
+export const DOCUMENT_VERSION = 2;
+
+export const EDGE_KEYS = Object.freeze(['top', 'right', 'bottom', 'left']);
+export const EDGE_STATES = Object.freeze(['flat', 'slot', 'tab']);
+export const BORDER_WIDTHS = Object.freeze([4, 8, 12]);
+
+export const DEFAULT_EDGES = Object.freeze({
+  top: 'flat',
+  right: 'flat',
+  bottom: 'flat',
+  left: 'flat',
+});

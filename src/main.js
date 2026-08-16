@@ -1,4 +1,5 @@
-import { CANVAS_SIZE, DEFAULT_TOKENS, DOCUMENT_VERSION, GRID } from './config.js';
+import { CANVAS_SIZE, DEFAULT_EDGES, DEFAULT_TOKENS, DOCUMENT_VERSION, GRID } from './config.js';
+import { applyEdgePreset, cycleEdge, invertEdges, normalizeEdges } from './edges.js';
 import {
   canvasPointToGrid,
   findAvailablePosition,
@@ -69,6 +70,9 @@ function addPrimitive(type) {
     ...position,
     size,
     token: definition.defaultToken,
+    edges: { ...DEFAULT_EDGES },
+    appearance: 'solid',
+    borderWidth: 8,
   };
 
   motifDocument.nextItemId += 1;
@@ -77,18 +81,36 @@ function addPrimitive(type) {
   commitDocument(`${definition.label} added at 1 × 1`);
 }
 
-function updateGridCoordinate(property, displayValue) {
+function updateSelected(mutator, message) {
   const item = selectedItem();
   if (!item) return;
-  Object.assign(item, normalizeGridItem({ ...item, [property]: Number(displayValue) - 1 }));
-  commitDocument('Position snapped to grid');
+  mutator(item);
+  commitDocument(message);
 }
 
 function setSizePreset(size) {
-  const item = selectedItem();
-  if (!item) return;
-  Object.assign(item, normalizeGridItem({ ...item, size }));
-  commitDocument(`Footprint set to ${size}`);
+  updateSelected((item) => {
+    Object.assign(item, normalizeGridItem({ ...item, size }));
+  }, `Footprint set to ${size}`);
+}
+
+function setEdge(edge) {
+  updateSelected((item) => {
+    item.edges = normalizeEdges(item.edges);
+    item.edges[edge] = cycleEdge(item.edges[edge]);
+  }, `${edge[0].toUpperCase()}${edge.slice(1)} edge updated`);
+}
+
+function setEdgePreset(preset) {
+  updateSelected((item) => {
+    item.edges = applyEdgePreset(preset);
+  }, `${preset[0].toUpperCase()}${preset.slice(1)} connector preset applied`);
+}
+
+function invertSelectedEdges() {
+  updateSelected((item) => {
+    item.edges = invertEdges(item.edges);
+  }, 'Connectors inverted');
 }
 
 function remixLayout() {
@@ -205,25 +227,31 @@ function bindInterface() {
     button.addEventListener('click', () => addPrimitive(button.dataset.addPrimitive));
   });
 
-  root.querySelectorAll('[data-select-item]').forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedId = button.dataset.selectItem;
-      render();
-    });
-  });
-
-  root.querySelectorAll('[data-grid-coordinate]').forEach((input) => {
-    const applyCoordinate = () => updateGridCoordinate(input.dataset.gridCoordinate, input.value);
-    input.addEventListener('change', applyCoordinate);
-    input.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      applyCoordinate();
-    });
-  });
-
   root.querySelectorAll('[data-size-preset]').forEach((button) => {
     button.addEventListener('click', () => setSizePreset(button.dataset.sizePreset));
+  });
+
+  root.querySelectorAll('[data-edge]').forEach((button) => {
+    button.addEventListener('click', () => setEdge(button.dataset.edge));
+  });
+
+  root.querySelectorAll('[data-edge-preset]').forEach((button) => {
+    button.addEventListener('click', () => setEdgePreset(button.dataset.edgePreset));
+  });
+
+  root.querySelector('#invert-edges')?.addEventListener('click', invertSelectedEdges);
+
+  root.querySelectorAll('[data-appearance]').forEach((button) => {
+    button.addEventListener('click', () => updateSelected((item) => {
+      item.appearance = button.dataset.appearance;
+    }, `Appearance set to ${button.dataset.appearance}`));
+  });
+
+  root.querySelectorAll('[data-border-width]').forEach((button) => {
+    button.addEventListener('click', () => updateSelected((item) => {
+      item.borderWidth = Number(button.dataset.borderWidth);
+      item.appearance = 'outline';
+    }, `Border set to ${button.dataset.borderWidth}px`));
   });
 
   root.querySelectorAll('[data-token-color]').forEach((input) => {
@@ -234,10 +262,9 @@ function bindInterface() {
   });
 
   root.querySelector('#fill-token')?.addEventListener('change', (event) => {
-    const item = selectedItem();
-    if (!item || !Object.hasOwn(DEFAULT_TOKENS, event.target.value)) return;
-    item.token = event.target.value;
-    commitDocument('Colour token updated');
+    updateSelected((item) => {
+      if (Object.hasOwn(DEFAULT_TOKENS, event.target.value)) item.token = event.target.value;
+    }, 'Colour token updated');
   });
 
   root.querySelector('#remove')?.addEventListener('click', deleteSelectedItem);

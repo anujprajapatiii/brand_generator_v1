@@ -1,4 +1,4 @@
-import { CANVAS_SIZE, GRID, SIZE_PRESETS } from './config.js';
+import { BORDER_WIDTHS, CANVAS_SIZE, EDGE_KEYS, GRID, SIZE_PRESETS } from './config.js';
 import { getSizePreset, gridRect } from './grid.js';
 import { PRIMITIVES, renderPrimitive } from './primitives.js';
 
@@ -23,7 +23,7 @@ function selectionMarkup(item) {
   ];
 
   return `<g class="selection-layer" aria-hidden="true">
-    <rect data-selection-outline x="${rect.x + 2}" y="${rect.y + 2}" width="${rect.width - 4}" height="${rect.height - 4}" rx="4"/>
+    <rect data-selection-outline x="${rect.x + 2}" y="${rect.y + 2}" width="${rect.width - 4}" height="${rect.height - 4}" rx="8"/>
     ${handles.map(([x, y], index) => `<rect data-selection-handle="${index}" x="${x - 5}" y="${y - 5}" width="10" height="10" rx="2"/>`).join('')}
   </g>`;
 }
@@ -38,80 +38,92 @@ function primitiveLibraryMarkup() {
   `).join('');
 }
 
-function layersMarkup(items, selectedId, tokens) {
-  if (!items.length) return '<p class="empty-state">Add a primitive to begin.</p>';
-
-  return [...items].reverse().map((item) => `
-    <button class="layer ${item.id === selectedId ? 'active' : ''}" data-select-item="${item.id}" type="button">
-      <span class="layer-swatch primitive-swatch-${item.type}" style="--swatch:${tokens[item.token]}"></span>
-      <span><strong>${escapeHtml(item.name)}</strong><small>${item.size} · ${item.token}</small></span>
-      <span class="drag-glyph" aria-hidden="true">⠿</span>
-    </button>
-  `).join('');
-}
-
 function sizePresetMarkup(selectedItem) {
   return Object.entries(SIZE_PRESETS).map(([key, preset]) => `
-    <button class="size-preset ${selectedItem.size === key ? 'active' : ''}" data-size-preset="${key}" type="button">
+    <button class="size-preset ${selectedItem.size === key ? 'active' : ''}" data-size-preset="${key}" type="button" aria-pressed="${selectedItem.size === key}">
       <span class="size-preview" style="--columns:${preset.columns};--rows:${preset.rows}"></span>
       <strong>${preset.label}</strong>
     </button>
   `).join('');
 }
 
-function inspectorMarkup(selectedItem, tokens) {
+function edgeButton(edge, selectedItem) {
+  const state = selectedItem.edges[edge];
+  return `<button class="edge-control edge-${edge}" data-edge="${edge}" data-state="${state}" type="button" aria-label="${edge} edge: ${state}. Click to cycle.">
+    <span>${edge}</span><strong>${state}</strong>
+  </button>`;
+}
+
+function edgeControlsMarkup(selectedItem) {
+  return `<div class="edge-map">
+    ${edgeButton('top', selectedItem)}
+    ${edgeButton('left', selectedItem)}
+    <button class="invert-control" id="invert-edges" type="button"><span aria-hidden="true">⇄</span><strong>Invert</strong></button>
+    ${edgeButton('right', selectedItem)}
+    ${edgeButton('bottom', selectedItem)}
+  </div>
+  <div class="edge-presets" aria-label="Connector presets">
+    ${['flat', 'slots', 'tabs', 'alternate'].map((preset) => `<button data-edge-preset="${preset}" type="button">${preset}</button>`).join('')}
+  </div>`;
+}
+
+function appearanceMarkup(selectedItem) {
+  return `<div class="segmented appearance-options">
+    ${['solid', 'outline'].map((appearance) => `<button class="${selectedItem.appearance === appearance ? 'active' : ''}" data-appearance="${appearance}" type="button" aria-pressed="${selectedItem.appearance === appearance}">${appearance}</button>`).join('')}
+  </div>
+  <div class="border-options ${selectedItem.appearance === 'outline' ? '' : 'muted'}">
+    <span>Border</span>
+    <div class="segmented compact">
+      ${BORDER_WIDTHS.map((width) => `<button class="${selectedItem.borderWidth === width ? 'active' : ''}" data-border-width="${width}" type="button" aria-pressed="${selectedItem.borderWidth === width}">${width}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function shapeControlsMarkup(selectedItem, tokens) {
   if (!selectedItem) {
-    return `<div class="inspector-empty">
-      <span class="empty-symbol">□</span>
-      <h2>No primitive selected</h2>
-      <p>Select a layer or add a primitive to edit its grid footprint.</p>
-    </div>`;
+    return `<section class="control-section selected-empty">
+      <span class="empty-symbol" aria-hidden="true">□</span>
+      <h2>Select a shape</h2>
+      <p>Choose a shape on the canvas to edit its footprint, edges, border, and colour.</p>
+    </section>`;
   }
 
   const definition = PRIMITIVES[selectedItem.type];
   const size = getSizePreset(selectedItem.size);
-  const maxColumn = GRID.columns - size.columns + 1;
-  const maxRow = GRID.rows - size.rows + 1;
-
-  return `<div class="property-head">
-    <div>
-      <p class="eyebrow">Inspector</p>
-      <h2>${escapeHtml(selectedItem.name)}</h2>
-      <span class="type-badge">${definition.label}</span>
+  return `<section class="control-section selected-shape">
+    <div class="selected-head">
+      <div>
+        <p class="eyebrow">Shape controls</p>
+        <h2>${escapeHtml(selectedItem.name)}</h2>
+        <span class="type-badge">${definition.label} · ${size.label}</span>
+      </div>
+      <button class="remove" id="remove" type="button" aria-label="Delete ${escapeHtml(selectedItem.name)}">×</button>
     </div>
-    <button class="remove" id="remove" type="button" aria-label="Delete ${escapeHtml(selectedItem.name)}">×</button>
-  </div>
 
-  <div class="inspector-section">
-    <div class="section-heading">
-      <p class="eyebrow">Grid position</p>
-      <span>Cell coordinates</span>
+    <div class="control-group">
+      <div class="section-heading"><p class="eyebrow">Footprint</p><span>Grid units</span></div>
+      <div class="size-presets">${sizePresetMarkup(selectedItem)}</div>
     </div>
-    <div class="field-row">
-      <label class="field">Column
-        <input class="input" data-grid-coordinate="column" type="number" min="1" max="${maxColumn}" step="1" value="${selectedItem.column + 1}">
+
+    <div class="control-group connector-group">
+      <div class="section-heading"><p class="eyebrow">Edge connectors</p><span>Click an edge to cycle</span></div>
+      ${edgeControlsMarkup(selectedItem)}
+      <p class="hint">Slots subtract. Tabs add. Invert makes the complementary piece.</p>
+    </div>
+
+    <div class="control-group">
+      <div class="section-heading"><p class="eyebrow">Appearance</p><span>Independent of shape</span></div>
+      ${appearanceMarkup(selectedItem)}
+    </div>
+
+    <div class="control-group">
+      <label class="wide-field">Colour token
+        <select class="input" id="fill-token">
+          ${Object.keys(tokens).map((token) => `<option value="${token}" ${selectedItem.token === token ? 'selected' : ''}>${token}</option>`).join('')}
+        </select>
       </label>
-      <label class="field">Row
-        <input class="input" data-grid-coordinate="row" type="number" min="1" max="${maxRow}" step="1" value="${selectedItem.row + 1}">
-      </label>
     </div>
-  </div>
-
-  <div class="inspector-section">
-    <div class="section-heading">
-      <p class="eyebrow">Footprint</p>
-      <span>Approved sizes</span>
-    </div>
-    <div class="size-presets">${sizePresetMarkup(selectedItem)}</div>
-  </div>
-
-  <div class="inspector-section">
-    <label class="wide-field">Colour token
-      <select class="input" id="fill-token">
-        ${Object.keys(tokens).map((token) => `<option value="${token}" ${selectedItem.token === token ? 'selected' : ''}>${token}</option>`).join('')}
-      </select>
-    </label>
-  </div>`;
+  </section>`;
 }
 
 function tokensMarkup(tokens) {
@@ -144,14 +156,17 @@ export function renderApp({ document, tokens, selectedId, theme }) {
       <aside class="sidebar">
         <div class="sidebar-intro">
           <p class="eyebrow">Primitive library</p>
-          <p>Clean geometry only. Every new object begins at one grid unit.</p>
+          <p>Start clean, then build a reusable edge language.</p>
         </div>
         <div class="primitive-list">${primitiveLibraryMarkup()}</div>
 
-        <div class="sidebar-section">
-          <div class="section-heading"><p class="eyebrow">Composition</p><span>${document.items.length} layers</span></div>
-          <div class="layers">${layersMarkup(document.items, selectedId, tokens)}</div>
-        </div>
+        ${shapeControlsMarkup(selectedItem, tokens)}
+
+        <section class="control-section token-section">
+          <div class="section-heading"><p class="eyebrow">Design tokens</p><span>Global</span></div>
+          <div class="tokens">${tokensMarkup(tokens)}</div>
+          <button class="btn full-width" id="save-tokens" type="button">Save colour system</button>
+        </section>
       </aside>
 
       <section class="stage">
@@ -163,27 +178,9 @@ export function renderApp({ document, tokens, selectedId, theme }) {
               ${selectionMarkup(selectedItem)}
             </svg>
           </div>
-          <div class="canvas-footer"><span>Drag to move · all movement snaps to cells</span><span>Schema v${document.version}</span></div>
+          <div class="canvas-footer"><span>Select or drag a shape · edges cycle flat / slot / tab</span><span>Schema v${document.version}</span></div>
         </div>
       </section>
-
-      <aside class="rightbar">
-        ${inspectorMarkup(selectedItem, tokens)}
-
-        <div class="right-section structure-section">
-          <div class="section-heading"><p class="eyebrow">System structure</p><span>Foundation</span></div>
-          <div class="structure-flow">
-            <span>Primitive</span><i>→</i><span>Grid footprint</span><i>→</i><span>Composition</span>
-          </div>
-          <p class="hint">Geometry, footprint, position, and colour remain independent so future rules can compose without changing the document model.</p>
-        </div>
-
-        <div class="right-section">
-          <div class="section-heading"><p class="eyebrow">Design tokens</p><span>Global</span></div>
-          <div class="tokens">${tokensMarkup(tokens)}</div>
-          <button class="btn full-width" id="save-tokens" type="button">Save colour system</button>
-        </div>
-      </aside>
     </div>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite">Saved</div>`;
@@ -214,9 +211,4 @@ export function updateDraggedItem(root, item) {
     handle.setAttribute('x', handles[index][0] - 5);
     handle.setAttribute('y', handles[index][1] - 5);
   });
-
-  const columnInput = root.querySelector('[data-grid-coordinate="column"]');
-  const rowInput = root.querySelector('[data-grid-coordinate="row"]');
-  if (columnInput) columnInput.value = item.column + 1;
-  if (rowInput) rowInput.value = item.row + 1;
 }

@@ -2,9 +2,11 @@
   "name": "motif-brand-studio",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 4173",
     "build": "node scripts/build.mjs",
-    "preview": "python3 -m http.server 4173 -d dist"
+    "preview": "python3 -m http.server 4173 -d dist",
+    "test": "node scripts/test.mjs"
   }
 }

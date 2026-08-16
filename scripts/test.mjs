@@ -326,6 +326,7 @@ const [indexSource, stylesSource, mainSource] = await Promise.all([
   readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
 ]);
 assert.match(indexSource, /tasa-orbiter/);
+assert.match(indexSource, /src\/main\.js\?v=4b7ac98/);
 assert.doesNotMatch(indexSource, /Manrope|DM\+Mono|fonts\.googleapis/);
 assert.match(stylesSource, /--font: "TASA Orbiter", sans-serif/);
 assert.doesNotMatch(stylesSource, /font-mono|font-sans|Manrope|DM Mono/);

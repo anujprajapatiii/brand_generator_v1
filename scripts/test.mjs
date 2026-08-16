@@ -103,27 +103,47 @@ assert.equal(resolvedMotifKind(normalizeMotif(stableMotifItem.motif)), resolvedM
 const hiddenMotif = renderPrimitive({ ...stableMotifItem, motif: { ...stableMotifItem.motif, kind: 'none' } }, DEFAULT_TOKENS);
 assert.doesNotMatch(hiddenMotif, /class="motif-layer"/);
 
-function fragmentRectsAt(width, height, density = 'rich') {
-  const layer = renderMotifLayer({
+function fragmentLayerAt(width, height, density = 'rich') {
+  const markup = renderMotifLayer({
     id: `fragments-${width}-${height}-${density}`, type: 'rectangle', edges: applyEdgePreset('alternate'),
     motif: { kind: 'fragments', seed: 813, density, glow: 'off' },
   }, width, height, `fragment-mask-${width}-${height}-${density}`);
-  return [...layer.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="([\d.]+)" fill="#fff"\/>/g)]
+  const rects = [...markup.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="([\d.]+)" fill="#fff"\/>/g)]
     .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), radius: Number(match[5]) }));
+  return {
+    markup,
+    rects,
+    unit: Number(markup.match(/data-fragment-unit="(\d+)"/)[1]),
+    patternCount: Number(markup.match(/data-fragment-pattern-count="(\d+)"/)[1]),
+    patterns: markup.match(/data-fragment-patterns="([^"]+)"/)[1].split(','),
+  };
 }
 
-const fragmentRects = fragmentRectsAt(160, 160);
-assert.equal(fragmentRects.length, 8);
-assert.ok(fragmentRects.every((rect) => rect.radius > 0));
-assert.ok(fragmentRects.every((rect) => rect.radius <= rect.height * 0.3));
-assert.ok(fragmentRects.every((rect) => rect.height <= 10));
-assert.ok(new Set(fragmentRects.map((rect) => rect.width)).size >= 2);
-assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.x)) + Math.max(...fragmentRects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), 80);
-assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.y)) + Math.max(...fragmentRects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), 80);
-assert.equal(fragmentRectsAt(80, 80).length, 6);
-assert.equal(fragmentRectsAt(80, 160).length, 10);
-assert.equal(fragmentRectsAt(160, 240).length, 12);
-assert.equal(fragmentRectsAt(240, 240).length, 10);
+const fragmentDensityMatrix = [
+  { width: 80, height: 80, counts: [1, 1, 1] },
+  { width: 80, height: 160, counts: [1, 2, 2] },
+  { width: 160, height: 160, counts: [2, 2, 3] },
+  { width: 160, height: 240, counts: [2, 3, 4] },
+  { width: 240, height: 240, counts: [2, 4, 5] },
+];
+fragmentDensityMatrix.forEach(({ width, height, counts }) => {
+  MOTIF_DENSITIES.forEach((density, densityIndex) => {
+    const fragmentLayer = fragmentLayerAt(width, height, density);
+    assert.equal(fragmentLayer.unit, 8);
+    assert.equal(fragmentLayer.patternCount, counts[densityIndex]);
+    assert.equal(fragmentLayer.patterns.length, fragmentLayer.patternCount);
+    assert.ok(fragmentLayer.rects.length >= fragmentLayer.patternCount);
+    assert.ok(fragmentLayer.rects.every((rect) => rect.width % fragmentLayer.unit === 0));
+    assert.ok(fragmentLayer.rects.every((rect) => rect.height % fragmentLayer.unit === 0));
+    assert.ok(fragmentLayer.rects.every((rect) => rect.radius === 2.25));
+    assert.equal(Number(((Math.min(...fragmentLayer.rects.map((rect) => rect.x)) + Math.max(...fragmentLayer.rects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), width / 2);
+    assert.equal(Number(((Math.min(...fragmentLayer.rects.map((rect) => rect.y)) + Math.max(...fragmentLayer.rects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), height / 2);
+  });
+});
+
+const richLargeFragments = fragmentLayerAt(240, 240, 'rich');
+assert.deepEqual(new Set(richLargeFragments.patterns), new Set(['bar', 'split', 'step', 'corner', 'dot']));
+assert.ok(new Set(richLargeFragments.rects.map((rect) => rect.width)).size >= 3);
 
 const rectangularScribbles = ['sparse', 'balanced', 'rich'].map((density) => renderMotifLayer({
   id: `scribble-${density}`, type: 'rectangle', edges: applyEdgePreset('flat'),

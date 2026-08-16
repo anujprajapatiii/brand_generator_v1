@@ -157,12 +157,15 @@ function scribbleGeometry(frame, motif, random) {
     x: clamp(x + (index > 0 && index < sourcePoints.length - 1 ? (random() - 0.5) * 0.018 : 0), 0, 1),
     y: clamp((flip ? 1 - y : y) + ((random() - 0.5) * 0.035), 0.05, 0.95),
   }));
+  const gestureDepth = vertical
+    ? Math.min(frame.width, frame.height * 0.34)
+    : Math.min(frame.height, frame.width * 0.34);
   const mapped = normalized.map((point) => (vertical ? {
-    x: frame.x + ((1 - point.y) * frame.width),
+    x: frame.centerX + ((0.5 - point.y) * gestureDepth),
     y: frame.y + (point.x * frame.height),
   } : {
     x: frame.x + (point.x * frame.width),
-    y: frame.y + (point.y * frame.height),
+    y: frame.centerY + ((point.y - 0.5) * gestureDepth),
   }));
   const points = centerPoints(mapped, frame);
   const strokeWidth = clamp(frame.shortest * 0.055, 4, 10);

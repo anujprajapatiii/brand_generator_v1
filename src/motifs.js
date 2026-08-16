@@ -87,27 +87,28 @@ function densityCount(density, values) {
 function fragmentsGeometry(frame, motif, random) {
   const count = densityCount(motif.density, [2, 4, 6]);
   const rowCount = count / 2;
-  const band = clamp(frame.shortest * 0.09, 6, 12);
-  const gap = clamp(frame.shortest * 0.055, 4, 9);
+  const compositionWidth = frame.width * 0.88;
+  const band = clamp(frame.shortest * 0.078, 5, 10);
+  const gap = clamp(frame.shortest * 0.05, 4, 8);
   const totalHeight = (rowCount * band) + ((rowCount - 1) * gap);
   const startY = frame.centerY - (totalHeight / 2);
-  const widthScales = [0.24, 0.34, 0.46, 0.6];
+  const widthScales = [0.2, 0.28, 0.38, 0.5];
   const elements = [];
 
   for (let row = 0; row < rowCount; row += 1) {
     const rawWidths = [0, 1].map(() => {
       const scale = pick(widthScales, random);
-      return clamp(frame.width * scale, 10, frame.width * 0.6);
+      return clamp(compositionWidth * scale, 10, compositionWidth * 0.5);
     });
     const rawTotal = rawWidths[0] + rawWidths[1] + gap;
-    const fitScale = Math.min(1, frame.width / rawTotal);
+    const fitScale = Math.min(1, compositionWidth / rawTotal);
     const widths = rawWidths.map((width) => width * fitScale);
     const rowWidth = widths[0] + widths[1] + gap;
     let x = frame.centerX - (rowWidth / 2);
     const y = startY + (row * (band + gap));
 
     widths.forEach((elementWidth) => {
-      elements.push(`<rect x="${tidy(x)}" y="${tidy(y)}" width="${tidy(elementWidth)}" height="${tidy(band)}" rx="${tidy(band * 0.45)}" fill="#fff"/>`);
+      elements.push(`<rect x="${tidy(x)}" y="${tidy(y)}" width="${tidy(elementWidth)}" height="${tidy(band)}" rx="${tidy(band * 0.28)}" fill="#fff"/>`);
       x += elementWidth + gap;
     });
   }
@@ -124,7 +125,7 @@ function centerPoints(points, frame) {
 }
 
 function smoothPath(points) {
-  const tension = 1.05;
+  const tension = 0.92;
   let path = `M${tidy(points[0].x)} ${tidy(points[0].y)}`;
   for (let index = 0; index < points.length - 1; index += 1) {
     const previous = points[Math.max(0, index - 1)];
@@ -144,22 +145,49 @@ function smoothPath(points) {
   return path;
 }
 
-function scribbleGeometry(frame, motif, random) {
+function rectangularScribblePoints(frame, motif, random) {
   const vertical = frame.height > frame.width * 1.18;
-  const anchors = {
-    sparse: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [1, 0.69]],
-    balanced: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.9, 0.56], [1, 0.69]],
-    rich: [[0, 0.58], [0.3, 0.76], [0.16, 0.06], [0.7, 0.61], [0.82, 0.48], [0.89, 0.56], [0.95, 0.52], [1, 0.69]],
-  };
-  const sourcePoints = anchors[motif.density];
+  const settings = {
+    sparse: { samples: 5, turns: 0.58, amplitude: 0.22 },
+    balanced: { samples: 9, turns: 1.24, amplitude: 0.32 },
+    rich: { samples: 17, turns: 2.18, amplitude: 0.38 },
+  }[motif.density];
+  const structures = ['sweep', 'wave', 'loop', 'weave'];
+  const structure = structures[motif.seed % structures.length];
+  const phase = (random() - 0.5) * Math.PI;
   const flip = random() > 0.5;
-  const normalized = sourcePoints.map(([x, y], index) => ({
-    x: clamp(x + (index > 0 && index < sourcePoints.length - 1 ? (random() - 0.5) * 0.018 : 0), 0, 1),
-    y: clamp((flip ? 1 - y : y) + ((random() - 0.5) * 0.035), 0.05, 0.95),
-  }));
+  const normalized = [];
+
+  for (let index = 0; index < settings.samples; index += 1) {
+    const t = index / (settings.samples - 1);
+    const envelope = Math.sin(Math.PI * t);
+    const angle = (t * settings.turns * Math.PI * 2) + phase;
+    const organic = Math.sin((t * Math.PI * (settings.turns + 1.35)) - (phase * 0.4));
+    let x = t;
+    let y = 0.5;
+
+    if (structure === 'sweep') {
+      y += settings.amplitude * ((Math.sin((t - 0.08) * Math.PI * (settings.turns + 0.75) + phase) * 0.78) + ((t - 0.5) * 0.22));
+    } else if (structure === 'wave') {
+      y += settings.amplitude * ((Math.sin(angle) * 0.82) + (organic * 0.18));
+    } else if (structure === 'loop') {
+      x += Math.cos(angle) * settings.amplitude * 0.42 * envelope;
+      y += Math.sin(angle) * settings.amplitude * envelope;
+    } else {
+      x += Math.sin((angle * 1.35) + 0.4) * settings.amplitude * 0.16 * envelope;
+      y += settings.amplitude * ((Math.sin(angle) * 0.78) + (Math.sin((angle * 2.1) - 0.7) * 0.22));
+    }
+
+    const pointJitter = index > 0 && index < settings.samples - 1 ? (random() - 0.5) * 0.025 : 0;
+    normalized.push({
+      x: clamp(x + pointJitter, -0.08, 1.08),
+      y: clamp((flip ? 1 - y : y) + (pointJitter * 0.7), 0.05, 0.95),
+    });
+  }
+
   const gestureDepth = vertical
-    ? Math.min(frame.width, frame.height * 0.4)
-    : Math.min(frame.height, frame.width * 0.4);
+    ? Math.min(frame.width * 0.88, frame.height * 0.42)
+    : Math.min(frame.height * 0.88, frame.width * 0.42);
   const mapped = normalized.map((point) => (vertical ? {
     x: frame.centerX + ((0.5 - point.y) * gestureDepth),
     y: frame.y + (point.x * frame.height),
@@ -167,19 +195,58 @@ function scribbleGeometry(frame, motif, random) {
     x: frame.x + (point.x * frame.width),
     y: frame.centerY + ((point.y - 0.5) * gestureDepth),
   }));
-  const points = centerPoints(mapped, frame);
-  const strokeWidth = clamp(frame.shortest * 0.055, 4, 10);
-  const path = smoothPath(points);
-  return `<path d="${path}" fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  return { points: centerPoints(mapped, frame), structure };
+}
+
+function spiralScribblePoints(frame, motif, random) {
+  const lapRanges = {
+    sparse: [1],
+    balanced: [2, 3],
+    rich: [3, 4],
+  };
+  const laps = pick(lapRanges[motif.density], random);
+  const direction = random() > 0.5 ? 1 : -1;
+  const phase = random() * Math.PI * 2;
+  const sampleCount = (laps * 11) + 2;
+  const points = [];
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const t = index / (sampleCount - 1);
+    const angle = phase + (direction * t * laps * Math.PI * 2);
+    const baseRadius = 0.07 + (t * 0.41);
+    const wobble = 1 + (Math.sin((angle * 1.7) + phase) * 0.035) + ((random() - 0.5) * 0.018);
+    const radius = baseRadius * wobble;
+    points.push({
+      x: frame.centerX + (Math.cos(angle) * radius * frame.width * 0.94),
+      y: frame.centerY + (Math.sin(angle) * radius * frame.height * 0.94),
+    });
+  }
+
+  return { points: centerPoints(points, frame), laps };
+}
+
+function scribbleGeometry(item, frame, motif, random) {
+  const ellipse = item.type === 'ellipse';
+  const generated = ellipse
+    ? spiralScribblePoints(frame, motif, random)
+    : rectangularScribblePoints(frame, motif, random);
+  const strokeScale = densityCount(motif.density, [0.06, 0.052, 0.044]);
+  const strokeWidth = clamp(frame.shortest * strokeScale, 3.5, 9);
+  const path = smoothPath(generated.points);
+  const structure = ellipse ? 'spiral' : generated.structure;
+  const laps = ellipse ? ` data-scribble-laps="${generated.laps}"` : '';
+  return `<path d="${path}" data-scribble-structure="${structure}"${laps} fill="none" stroke="#fff" stroke-width="${tidy(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
 }
 
 function dotsGeometry(frame, motif) {
   const square = Math.abs(frame.width - frame.height) / Math.max(frame.width, frame.height) < 0.18;
   const vertical = frame.height > frame.width * 1.18 || (square && motif.seed % 2 === 1);
   const count = densityCount(motif.density, [1, 3, 5]);
-  const radius = clamp(frame.shortest * (count === 1 ? 0.15 : 0.055), count === 1 ? 6 : 3, count === 1 ? 18 : 8);
+  const radiusScale = densityCount(motif.density, [0.15, 0.04, 0.032]);
+  const radius = clamp(frame.shortest * radiusScale, count === 1 ? 6 : 2.5, count === 1 ? 18 : 7);
   const axisLength = vertical ? frame.height : frame.width;
-  const spacing = count === 1 ? 0 : Math.min(radius * 2.8, (axisLength - (radius * 2)) / (count - 1));
+  const visualGap = clamp(frame.shortest * 0.07, 5, 12);
+  const spacing = count === 1 ? 0 : Math.min((radius * 2) + visualGap, (axisLength - (radius * 2)) / (count - 1));
   const start = -(spacing * (count - 1)) / 2;
   const elements = [];
   for (let index = 0; index < count; index += 1) {
@@ -191,9 +258,9 @@ function dotsGeometry(frame, motif) {
   return elements.join('');
 }
 
-function motifGeometry(kind, frame, motif, random) {
+function motifGeometry(kind, item, frame, motif, random) {
   if (kind === 'fragments') return fragmentsGeometry(frame, motif, random);
-  if (kind === 'scribble') return scribbleGeometry(frame, motif, random);
+  if (kind === 'scribble') return scribbleGeometry(item, frame, motif, random);
   if (kind === 'dots') return dotsGeometry(frame, motif);
   return '';
 }
@@ -205,7 +272,7 @@ export function renderMotifLayer(item, width, height, maskId) {
 
   const frame = contentFrame(item, width, height);
   const random = seededRandom(motif.seed);
-  const geometry = motifGeometry(kind, frame, motif, random);
+  const geometry = motifGeometry(kind, item, frame, motif, random);
   const blur = clamp(frame.shortest * (motif.glow === 'bright' ? 0.055 : 0.035), 2, 12);
   const glowOpacity = motif.glow === 'bright' ? 0.56 : motif.glow === 'soft' ? 0.34 : 0;
   const glowId = `motif-glow-${String(item.id).replace(/[^a-z0-9-_]/gi, '-')}`;

@@ -103,35 +103,44 @@ assert.equal(resolvedMotifKind(normalizeMotif(stableMotifItem.motif)), resolvedM
 const hiddenMotif = renderPrimitive({ ...stableMotifItem, motif: { ...stableMotifItem.motif, kind: 'none' } }, DEFAULT_TOKENS);
 assert.doesNotMatch(hiddenMotif, /class="motif-layer"/);
 
-const fragmentLayer = renderMotifLayer({
-  id: 'fragments-centered', type: 'rectangle', edges: applyEdgePreset('alternate'),
-  motif: { kind: 'fragments', seed: 813, density: 'rich', glow: 'off' },
-}, 160, 160, 'fragment-mask');
-const fragmentRects = [...fragmentLayer.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="([\d.]+)" fill="#fff"\/>/g)]
-  .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), radius: Number(match[5]) }));
-assert.equal(fragmentRects.length, 6);
+function fragmentRectsAt(width, height, density = 'rich') {
+  const layer = renderMotifLayer({
+    id: `fragments-${width}-${height}-${density}`, type: 'rectangle', edges: applyEdgePreset('alternate'),
+    motif: { kind: 'fragments', seed: 813, density, glow: 'off' },
+  }, width, height, `fragment-mask-${width}-${height}-${density}`);
+  return [...layer.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="([\d.]+)" fill="#fff"\/>/g)]
+    .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), radius: Number(match[5]) }));
+}
+
+const fragmentRects = fragmentRectsAt(160, 160);
+assert.equal(fragmentRects.length, 8);
 assert.ok(fragmentRects.every((rect) => rect.radius > 0));
 assert.ok(fragmentRects.every((rect) => rect.radius <= rect.height * 0.3));
 assert.ok(fragmentRects.every((rect) => rect.height <= 10));
 assert.ok(new Set(fragmentRects.map((rect) => rect.width)).size >= 2);
 assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.x)) + Math.max(...fragmentRects.map((rect) => rect.x + rect.width))) / 2).toFixed(1)), 80);
 assert.equal(Number(((Math.min(...fragmentRects.map((rect) => rect.y)) + Math.max(...fragmentRects.map((rect) => rect.y + rect.height))) / 2).toFixed(1)), 80);
+assert.equal(fragmentRectsAt(80, 80).length, 6);
+assert.equal(fragmentRectsAt(80, 160).length, 10);
+assert.equal(fragmentRectsAt(160, 240).length, 12);
+assert.equal(fragmentRectsAt(240, 240).length, 10);
 
 const rectangularScribbles = ['sparse', 'balanced', 'rich'].map((density) => renderMotifLayer({
   id: `scribble-${density}`, type: 'rectangle', edges: applyEdgePreset('flat'),
   motif: { kind: 'scribble', seed: 41, density, glow: 'off' },
 }, 240, 120, `scribble-${density}-mask`));
 const rectangularCommandCounts = rectangularScribbles.map((markup) => (markup.match(/ C/g) ?? []).length);
-assert.deepEqual(rectangularCommandCounts, [4, 8, 16]);
+assert.deepEqual(rectangularCommandCounts, [5, 6, 7]);
 assert.ok(rectangularScribbles.every((markup) => /<path d="M[^"]+ C/.test(markup)));
 assert.ok(rectangularScribbles.every((markup) => !/ L| A/.test(markup)));
 assert.ok(rectangularScribbles.every((markup) => /stroke-linecap="round" stroke-linejoin="round"/.test(markup)));
+assert.ok(rectangularScribbles.every((markup) => /data-scribble-structure="gesture"/.test(markup)));
 
-const scribbleStructures = [40, 41, 42, 43].map((seed) => renderMotifLayer({
+const rerolledRectanglePaths = [40, 41, 42, 43].map((seed) => renderMotifLayer({
   id: `scribble-structure-${seed}`, type: 'rectangle', edges: applyEdgePreset('flat'),
   motif: { kind: 'scribble', seed, density: 'balanced', glow: 'off' },
-}, 240, 120, `scribble-structure-${seed}-mask`).match(/data-scribble-structure="([^"]+)"/)[1]);
-assert.deepEqual(new Set(scribbleStructures), new Set(['sweep', 'wave', 'loop', 'weave']));
+}, 240, 120, `scribble-structure-${seed}-mask`).match(/<path d="([^"]+)"/)[1]);
+assert.equal(new Set(rerolledRectanglePaths).size, 4);
 
 const ellipseSpirals = ['sparse', 'balanced', 'rich'].map((density) => renderMotifLayer({
   id: `spiral-${density}`, type: 'ellipse', edges: applyEdgePreset('flat'),
@@ -143,6 +152,15 @@ assert.ok([2, 3].includes(spiralLaps[1]));
 assert.ok([3, 4].includes(spiralLaps[2]));
 assert.ok(ellipseSpirals.every((markup) => /data-scribble-structure="spiral"/.test(markup)));
 assert.ok(ellipseSpirals.every((markup) => !/ L| A/.test(markup)));
+
+const spiralStrokeWidths = [[80, 80], [80, 160], [160, 160], [160, 240], [240, 240]].map(([width, height]) => {
+  const markup = renderMotifLayer({
+    id: `spiral-stroke-${width}-${height}`, type: 'ellipse', edges: applyEdgePreset('flat'),
+    motif: { kind: 'scribble', seed: 41, density: 'balanced', glow: 'off' },
+  }, width, height, `spiral-stroke-mask-${width}-${height}`);
+  return Number(markup.match(/stroke-width="([\d.]+)"/)[1]);
+});
+assert.ok(spiralStrokeWidths.every((width, index) => index === 0 || width > spiralStrokeWidths[index - 1]));
 
 const horizontalDots = renderMotifLayer({
   id: 'dots-horizontal', type: 'rectangle', edges: applyEdgePreset('flat'),
